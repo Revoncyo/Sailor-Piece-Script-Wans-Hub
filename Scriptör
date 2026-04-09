@@ -1,0 +1,2433 @@
+-- =============================================================================
+-- 🛡️ BAŞLANGIÇ KONTROLLERİ VE ANTI-AFK
+-- =============================================================================
+if getgenv().SailorGoldLoaded then
+    pcall(function()
+        if getgenv().WansHubCloseUI then getgenv().WansHubCloseUI() end
+    end)
+    task.wait(0.5)
+end
+getgenv().SailorGoldLoaded = true
+
+print("WansHub: Script Başlatılıyor...")
+
+-- 🛑 ANTI-AFK SISTEMI (Otomatik Çalışır)
+local VirtualUser = game:GetService("VirtualUser")
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+-- =============================================================================
+-- ⚙️ SERVİSLER VE GLOBAL DEĞİŞKENLER
+-- =============================================================================
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+
+-- 📱 MOBİL VE TÜM EXECUTORLAR İÇİN GÜVENLİ GUI OLUŞTURUCU
+local targetGui
+pcall(function() targetGui = gethui and gethui() or CoreGui end)
+if not targetGui or not pcall(function() local x = targetGui.Name end) then 
+    targetGui = Players.LocalPlayer:WaitForChild("PlayerGui", 10) or Players.LocalPlayer:FindFirstChild("PlayerGui")
+end
+
+if not targetGui then
+    warn("WansHub: Hedef GUI bulunamadı! Lütfen oyuna tam girdikten sonra çalıştırın.")
+    return
+end
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+_G.AutoFarm = false
+_G.OtoGorev = false -- AKILLI GÖREV SİSTEMİ
+_G.OtoLevel = false -- 🌟 OTO LEVEL SİSTEMİ
+_G.TowerFarm = false -- 🗼 TOWER FARM SİSTEMİ
+_G.OtoTumBosslar = false -- 👑 YENİ: OTO BOSS ROTASYONU
+_G.MevcutBossIndex = 1
+
+_G.AutoSkills = false   -- ⚔️ OTO YETENEK
+_G.UseSkillZ = true     -- YETENEK FİLTRELERİ
+_G.UseSkillX = true
+_G.UseSkillC = true
+_G.UseSkillV = true
+_G.UseSkillF = true
+_G.SkillDelay = 2.5     -- HER YETENEK ARASI BEKLEME SÜRESİ
+
+_G.AutoStats = false    -- 📊 OTO STAT
+_G.SecilenStat = ""
+_G.PlayerESP = false    -- 👁️ ESP
+_G.BossESP = false
+
+_G.MevcutGorevHedefi = "" -- Şu an hangi hedefin görevinin alındığını takip eder
+_G.OtoVurus = false
+_G.SecilenSilah = ""
+_G.AktifHedef = ""      
+_G.SecilenNPC = ""      
+_G.TeleportingTo = nil  
+
+_G.Mesafe = 12 
+_G.VurusYonu = "Top" -- 🎯 YENİ: Vuruş Yönü Sistemi (İngilizce Default)
+_G.SaldiriHizi = 0.2
+_G.UcusHizi = 100
+
+-- ⌨️ KISAYOL VE DİL AYARLARI
+_G.ToggleKey = Enum.KeyCode.RightControl
+_G.Language = "English"
+
+_G.Canavarlar = {}
+_G.Bosslar = {}
+_G.Npcler = {}
+_G.Koordinatlar = {}    
+_G.UcakKoordinat = nil  
+_G.HaritaTaraniyor = false -- YENİ: Harita tarama durumu
+
+-- Imbonerahamwe y'Amarembo (Level Guide)
+_G.LevelRehberi = {
+    {Min = 1,     Max = 99,    Hedef = "Thief"},
+    {Min = 100,   Max = 249,   Hedef = "ThiefBoss"},
+    {Min = 250,   Max = 499,   Hedef = "Monkey"},
+    {Min = 500,   Max = 749,   Hedef = "Monkey Boss"},
+    {Min = 750,   Max = 999,   Hedef = "DesertBandit"},
+    {Min = 1000,  Max = 1499,  Hedef = "DesertBoss"},
+    {Min = 1500,  Max = 1999,  Hedef = "FrostRogue"},
+    {Min = 2000,  Max = 2999,  Hedef = "WinterWarden"},
+    {Min = 3000,  Max = 3999,  Hedef = "SorcererStudent"},
+    {Min = 4000,  Max = 4999,  Hedef = "PandaSorcerer"},
+    {Min = 5000,  Max = 6249,  Hedef = "Hollow"},
+    {Min = 6250,  Max = 6999,  Hedef = "StrongSorcerer"},
+    {Min = 7000,  Max = 7999,  Hedef = "Curse"},
+    {Min = 8000,  Max = 8999,  Hedef = "SlimeWarrior"},
+    {Min = 9000,  Max = 9999,  Hedef = "AcademyTeacher"},
+    {Min = 10000, Max = 10749, Hedef = "Swordsman"},
+    {Min = 10750, Max = 11499, Hedef = "Quincy"},
+    {Min = 11500, Max = 11999, Hedef = "Ninja"},
+    {Min = 12000, Max = 99999, Hedef = "ArenaFighter"}
+}
+
+-- Umuhuzabikorwa w'abakozi ba NPC (NPC Coordinates)
+_G.GorevNPC_Koordinatlari = {
+    -- Ibirwa by'Intangiriro
+    ["Thief"] = Vector3.new(169.4, 16.3, -215.2),
+    ["ThiefBoss"] = Vector3.new(-9.2, -2.6, -202.0),
+    -- Ibirwa by'Ishyamba
+    ["Monkey"] = Vector3.new(-519.9, -1.4, 430.7),
+    ["MonkeyBoss"] = Vector3.new(-469.6, 18.8, 478.9),
+    -- Ibirwa by'Ubutayu
+    ["DesertBandit"] = Vector3.new(-686.9, -2.4, -457.3),
+    ["DesertBoss"] = Vector3.new(-861.4, -4.2, -386.2),
+    -- Ibirwa bya Shelegi
+    ["FrostRogue"] = Vector3.new(-389.1, -1.7, -947.1),
+    ["WinterWarden"] = Vector3.new(-551.7, 22.4, -1023.6),
+    -- Shibuya
+    ["SorcererStudent"] = Vector3.new(1420.8, 8.8, 374.4),
+    ["PandaSorcerer"] = Vector3.new(1607.6, 8.8, 429.3),
+    -- Ibindi Birwa
+    ["Hollow"] = Vector3.new(-287.4, -3.4, 1038.3),
+    ["Curse"] = Vector3.new(-19.1, 1.9, -1982.7),
+    ["Slime"] = Vector3.new(-1184.8, 18.1, 337.2),
+    ["AcademyTeacher"] = Vector3.new(1029.6, 1.5, 1243.4),
+    ["Swordsman"] = Vector3.new(-1166.3, 2.5, -1190.8),
+    ["Quincy"] = Vector3.new(-1405.3, 1603.0, 1642.9),
+    ["Ninja"] = Vector3.new(-1788.1, 6.9, -743.0),
+    ["ArenaFighter"] = Vector3.new(67.6, -1.1, 1760.9)
+}
+
+-- Ibirwa byose
+_G.Adalar = {
+    ["01. Starter Island"] = Vector3.new(-68.0, -3.5, -295.6),
+    ["02. Jungle Island"] = Vector3.new(-386.2, -4.9, 407.1),
+    ["03. Desert Island"] = Vector3.new(-682.0, -4.7, -287.0),
+    ["04. Snow Island"] = Vector3.new(-176.2, -4.1, -997.1),
+    ["05. Sailor Island"] = Vector3.new(187.1, 1.9, 669.5),
+    ["06. Shibuya Station"] = Vector3.new(1274.9, 9.1, 233.7),
+    ["07. Hollow Island"] = Vector3.new(-537.0, -4.8, 872.7),
+    ["08. Boss Island"] = Vector3.new(598.3, -4.5, -1051.1),
+    ["09. Dungeon Island"] = Vector3.new(1277.5, 2.1, -896.0),
+    ["10. Shinjuku Island"] = Vector3.new(194.8, -2.6, -1642.8),
+    ["11. Slime Island"] = Vector3.new(-976.0, -3.8, 275.5),
+    ["12. Acedemy Island"] = Vector3.new(967.3, -3.9, 1053.6),
+    ["13. Judgement Island"] = Vector3.new(-1023.9, -3.9, -988.7),
+    ["14. SoulDominion Island"] = Vector3.new(-1183.6, 1603.6, 1558.1),
+    ["15. Ninja Island"] = Vector3.new(-1615.5, 8.8, -574.9),
+    ["16. Lawless Island"] = Vector3.new(214.3, -5.5, 1673.7),
+    ["17. Tower Island"] = Vector3.new(1281.1, -4.3, -1473.4)
+}
+
+local function AdalariOtomatikBul()
+    local potansiyelKlasorler = {"Islands", "Island", "Locations", "Map", "Spawns", "SpawnLocations", "Areas"}
+    local yeniBulunanSayisi = 0
+    for _, klasorAdi in ipairs(potansiyelKlasorler) do
+        local klasor = workspace:FindFirstChild(klasorAdi)
+        if klasor then
+            for _, obje in ipairs(klasor:GetChildren()) do
+                if obje:IsA("Model") and obje.PrimaryPart then
+                    _G.Adalar["[Auto] " .. obje.Name] = obje.PrimaryPart.Position
+                    yeniBulunanSayisi = yeniBulunanSayisi + 1
+                elseif obje:IsA("BasePart") then
+                    _G.Adalar["[Auto] " .. obje.Name] = obje.Position
+                    yeniBulunanSayisi = yeniBulunanSayisi + 1
+                end
+            end
+        end
+    end
+end
+AdalariOtomatikBul()
+
+-- =============================================================================
+-- 🌍 DİL SİSTEMİ (LANGUAGE SYSTEM)
+-- =============================================================================
+local UIUpdaters = {}
+local Lang = {
+    ["Türkçe"] = {
+        ["⚔️ Auto Farm"] = "⚔️ Oto Kasılma",
+        ["🗼 Tower + Dungeon"] = "🗼 Tower + Dungeon",
+        ["🚀 Teleport"] = "🚀 Işınlanma",
+        ["🏃 Player"] = "🏃 Oyuncu",
+        ["⚙️ Settings"] = "⚙️ Ayarlar",
+        ["⚔️ Select Weapon"] = "⚔️ Silahını Seç",
+        ["👹 Select Normal Monster"] = "👹 Normal Canavar Seç",
+        ["👑 Select Boss"] = "👑 Boss Seç",
+        ["▶️ Start Auto Farm"] = "▶️ Oto Farm Başlat",
+        ["📜 Smart Auto Quest"] = "📜 Akıllı Oto Görev Al",
+        ["🌟 Auto Level (Full Auto)"] = "🌟 Oto Level (Tam Otomatik)",
+        ["🔄 Auto Boss Rotation"] = "🔄 Oto Boss Kesme (Tüm Bosslar)",
+        ["❌ Manually Cancel Quest"] = "❌ Mevcut Görevi Manuel İptal Et",
+        ["Auto Attack Only"] = "Sadece Oto Vuruş",
+        ["📍 Hit Position?"] = "📍 Nereden Vursun?",
+        ["Top"] = "Üstünden",
+        ["Bottom"] = "Altından",
+        ["Behind"] = "Arkasından",
+        ["Attack Speed (Sec)"] = "Saldırı Hızı (Saniye)",
+        ["Flight Speed"] = "Uçuş Hızı",
+        ["Distance to Monster"] = "Canavara Olan Mesafe",
+        ["🚀 Teleport to Tower / Dungeon"] = "🚀 Tower / Dungeon Adasına Işınlan",
+        ["🗼 Tower + Dungeon Auto Farm"] = "🗼 Tower + Dungeon Oto Farm",
+        ["🏝️ Select Island (Map)"] = "🏝️ Ada Seç (Harita)",
+        ["🚀 Teleport to Selected Island"] = "🚀 Seçili Adaya Işınlan",
+        ["👤 Select NPC & Vendor"] = "👤 Satıcı & NPC Seç",
+        ["🚀 Teleport to Selected NPC"] = "🚀 Seçili NPC'ye Işınlan",
+        ["🛑 Stop Teleporting"] = "🛑 Işınlanmayı Durdur",
+        ["Walk Speed"] = "Yürüme Hızı",
+        ["Jump Power"] = "Zıplama Gücü",
+        ["📍 Copy Current Coordinates"] = "📍 Mevcut Koordinatımı Kopyala",
+        ["🔄 Rescan Map (For New Islands)"] = "🔄 Haritayı Yeniden Tara (Yeni Adalar İçin)",
+        ["🌍 Auto Discover All Islands (Scan)"] = "🌍 Tüm Adaları Gez ve Keşfet (Scan/Optimize)",
+        ["🛑 Stop Island Scan"] = "🛑 Ada Taramasını Durdur",
+        ["Clear Cache (If Broken)"] = "Hafızayı Temizle (Bozulursa)",
+        ["Close UI Completely (Destroy)"] = "Arayüzü Tamamen Kapat (Sil)",
+        ["Join Discord Server"] = "Discord Sunucusuna Katıl",
+        ["UI Toggle Key"] = "Arayüz Kısayol Tuşu",
+        ["Language / Dil"] = "Language / Dil",
+        ["Clear Selection"] = "Seçimi Temizle",
+        ["None Selected"] = "Seçim Yapılmadı",
+        ["Weapon Not Found"] = "Silah Bulunamadı",
+        ["No Data Yet"] = "Henüz Veri Yok",
+        ["Search..."] = "Ara...",
+        ["Auto Use Skills (Z, X, C, V)"] = "Oto Yetenek Kullan (Z, X, C, V)",
+        ["🛠️ Toggle Skill Settings"] = "🛠️ Yetenek Ayarlarını Göster/Gizle",
+        ["Skill Delay (Wait Time)"] = "Yetenek Bekleme Süresi",
+        ["Use Skill Z"] = "Z Yeteneğini Kullan",
+        ["Use Skill X"] = "X Yeteneğini Kullan",
+        ["Use Skill C"] = "C Yeteneğini Kullan",
+        ["Use Skill V"] = "V Yeteneğini Kullan",
+        ["Use Skill F"] = "F Yeteneğini Kullan",
+        ["📊 Auto Stats"] = "📊 Oto Stat",
+        ["Select Stat to Upgrade"] = "Yükseltilecek Statı Seç",
+        ["Enable Auto Stats"] = "Oto Stat Dağıtımını Başlat",
+        ["👁️ ESP"] = "👁️ ESP (Wallhack)",
+        ["Player ESP"] = "Oyuncu ESP",
+        ["Boss ESP"] = "Boss ESP",
+        ["🚀 Server Hop"] = "🚀 Sunucu Değiştir (Server Hop)",
+        ["Performance Mode (White Screen)"] = "Performans Modu (Gece Mavisi)",
+        ["Turn Off Performance Mode"] = "Performans Modunu Kapat",
+        ["VIP Access"] = "VIP Giriş",
+        ["Enter Premium Key"] = "Anahtarı Giriniz",
+        ["Login"] = "Giriş Yap",
+        ["Get Key"] = "Key Al",
+        ["Waiting..."] = "Bekleniyor...",
+        ["Welcome VIP!"] = "Başarılı! Hoşgeldiniz.",
+        ["Invalid Key!"] = "Hatalı Anahtar!",
+        ["Link Copied!"] = "Kopyalandı!"
+    }
+}
+
+local function T(text)
+    if _G.Language == "Türkçe" and Lang["Türkçe"][text] then
+        return Lang["Türkçe"][text]
+    end
+    return text
+end
+
+local currentWeapons = {}
+local gecerliHedef = nil
+local hedeflerKlasoru = {workspace}
+local CacheFileName = "SailorGold_Hafiza.json" 
+
+-- =============================================================================
+-- 💾 KALICI HAFIZA (CACHE) SİSTEMİ
+-- =============================================================================
+local canavarSet = {}
+local bossSet = {}
+local npcSet = {}
+
+local function SaveCache()
+    if not writefile then return end
+    local data = {
+        Canavarlar = _G.Canavarlar,
+        Bosslar = _G.Bosslar,
+        Npcler = _G.Npcler,
+        Koor = {}
+    }
+    for isim, pos in pairs(_G.Koordinatlar) do
+        data.Koor[isim] = {X = pos.X, Y = pos.Y, Z = pos.Z}
+    end
+    pcall(function() writefile(CacheFileName, HttpService:JSONEncode(data)) end)
+end
+
+local function LoadCache()
+    if readfile and isfile and isfile(CacheFileName) then
+        local success, result = pcall(function() return HttpService:JSONDecode(readfile(CacheFileName)) end)
+        if success and type(result) == "table" then
+            _G.Canavarlar = result.Canavarlar or {}
+            _G.Bosslar = result.Bosslar or {}
+            _G.Npcler = result.Npcler or {}
+            for _, v in ipairs(_G.Canavarlar) do canavarSet[v] = true end
+            for _, v in ipairs(_G.Bosslar) do bossSet[v] = true end
+            for _, v in ipairs(_G.Npcler) do npcSet[v] = true end
+            if result.Koor then
+                for isim, posTbl in pairs(result.Koor) do
+                    _G.Koordinatlar[isim] = Vector3.new(posTbl.X, posTbl.Y, posTbl.Z)
+                end
+            end
+        end
+    end
+end
+
+-- =============================================================================
+-- 🎨 UI RENK PALETİ (KIRMIZI/CRIMSON TEMA)
+-- =============================================================================
+local Theme = {
+    Background = Color3.fromRGB(20, 20, 20),
+    Sidebar = Color3.fromRGB(28, 28, 28),
+    Accent = Color3.fromRGB(220, 20, 60),      
+    AccentDark = Color3.fromRGB(139, 0, 0),    
+    Text = Color3.fromRGB(245, 245, 245),
+    TextDim = Color3.fromRGB(160, 160, 160),
+    ElementBg = Color3.fromRGB(35, 35, 35),
+    Hover = Color3.fromRGB(50, 50, 50),
+}
+
+local Library = {}
+
+local function AddGoldGradient(instance)
+    local gradient = Instance.new("UIGradient", instance)
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Theme.AccentDark),
+        ColorSequenceKeypoint.new(0.5, Theme.Accent),
+        ColorSequenceKeypoint.new(1, Theme.AccentDark)
+    }
+    gradient.Rotation = 45
+    return gradient
+end
+
+function Library:MakeDraggable(frame, handle)
+    handle = handle or frame
+    local dragging, dragInput, dragStart, startPos
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = frame.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    handle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            TweenService:Create(frame, TweenInfo.new(0.15), {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)}):Play()
+        end
+    end)
+end
+
+function Library:Init() 
+    if targetGui:FindFirstChild("WansHubGui") then targetGui.WansHubGui:Destroy() end
+    local ScreenGui = Instance.new("ScreenGui", targetGui)
+    ScreenGui.Name = "WansHubGui"
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling 
+    return ScreenGui 
+end
+
+function Library:CreateWindow(screenGui)
+    local clickSound = Instance.new("Sound")
+    clickSound.SoundId = "rbxassetid://139009780109934"
+    clickSound.Volume = 2
+    clickSound.Parent = screenGui
+
+    local MainFrame = Instance.new("Frame", screenGui)
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 650, 0, 420)
+    MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    MainFrame.BackgroundColor3 = Theme.Background
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+    
+    local scale = Instance.new("UIScale", MainFrame)
+    scale.Scale = 1
+    
+    local MainStroke = Instance.new("UIStroke", MainFrame)
+    MainStroke.Color = Theme.Accent
+    MainStroke.Thickness = 2.5
+    AddGoldGradient(MainStroke)
+    
+    local Sidebar = Instance.new("Frame", MainFrame)
+    Sidebar.Size = UDim2.new(0, 170, 1, 0)
+    Sidebar.BackgroundColor3 = Theme.Sidebar
+    Sidebar.BorderSizePixel = 0
+    Sidebar.ZIndex = 10 
+    Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
+    
+    local SidebarFix = Instance.new("Frame", Sidebar)
+    SidebarFix.Size = UDim2.new(0, 20, 1, 0)
+    SidebarFix.Position = UDim2.new(1, -10, 0, 0)
+    SidebarFix.BackgroundColor3 = Theme.Sidebar
+    SidebarFix.BorderSizePixel = 0
+    SidebarFix.ZIndex = 10
+    
+    local Divider = Instance.new("Frame", Sidebar)
+    Divider.Size = UDim2.new(0, 1, 1, 0)
+    Divider.Position = UDim2.new(1, 0, 0, 0)
+    Divider.BackgroundColor3 = Theme.AccentDark
+    Divider.BorderSizePixel = 0
+    Divider.ZIndex = 15
+    Divider.BackgroundTransparency = 0.5
+
+    local LogoContainer = Instance.new("Frame", Sidebar)
+    LogoContainer.Size = UDim2.new(1, 0, 0, 70)
+    LogoContainer.BackgroundTransparency = 1
+    LogoContainer.ZIndex = 12
+    
+    local LogoText = Instance.new("TextLabel", LogoContainer)
+    LogoText.Size = UDim2.new(1, 0, 0, 40)
+    LogoText.Position = UDim2.new(0, 0, 0, 15)
+    LogoText.BackgroundTransparency = 1
+    LogoText.Text = "WANS\nHUB"
+    LogoText.Font = Enum.Font.GothamBold
+    LogoText.TextColor3 = Theme.Text
+    LogoText.TextSize = 22
+    LogoText.TextXAlignment = Enum.TextXAlignment.Center
+    LogoText.ZIndex = 12
+    
+    local UIGradient = Instance.new("UIGradient", LogoText)
+    UIGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Theme.Text),
+        ColorSequenceKeypoint.new(1, Theme.Accent)
+    }
+    
+    local TabContainer = Instance.new("ScrollingFrame", Sidebar)
+    TabContainer.Position = UDim2.new(0, 0, 0, 80)
+    TabContainer.Size = UDim2.new(1, 0, 1, -90)
+    TabContainer.BackgroundTransparency = 1
+    TabContainer.ScrollBarThickness = 2
+    TabContainer.ScrollBarImageColor3 = Theme.Accent
+    TabContainer.ZIndex = 11 
+    
+    local TabList = Instance.new("UIListLayout", TabContainer)
+    TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    TabList.Padding = UDim.new(0, 6)
+    
+    local PagesContainer = Instance.new("Frame", MainFrame)
+    PagesContainer.Position = UDim2.new(0, 180, 0, 15)
+    PagesContainer.Size = UDim2.new(1, -190, 1, -30)
+    PagesContainer.BackgroundTransparency = 1
+    PagesContainer.ZIndex = 5 
+    
+    Library:MakeDraggable(MainFrame)
+
+    -- SAĞ TARAFA EKLENEN DEKORATİF GÖRSEL (FİLİGRAN)
+    local DecoImage = Instance.new("ImageLabel", MainFrame)
+    DecoImage.Size = UDim2.new(1, -170, 1, 0) 
+    DecoImage.Position = UDim2.new(0, 170, 0, 0) 
+    DecoImage.BackgroundTransparency = 1
+    DecoImage.Image = "rbxassetid://91347112827105"
+    DecoImage.ImageTransparency = 0.85 
+    DecoImage.ScaleType = Enum.ScaleType.Crop 
+    DecoImage.ZIndex = 0 
+
+    -- UI KAPATMA BUTONU
+    local CloseBtn = Instance.new("TextButton", MainFrame)
+    CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+    CloseBtn.Position = UDim2.new(1, -34, 0, 6)
+    CloseBtn.BackgroundColor3 = Theme.ElementBg
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Theme.Accent
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 14
+    CloseBtn.ZIndex = 100 
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+    local CloseStroke = Instance.new("UIStroke", CloseBtn)
+    CloseStroke.Color = Theme.Accent
+    CloseStroke.Thickness = 1
+    CloseBtn.MouseButton1Click:Connect(function()
+        clickSound:Play()
+        if getgenv().WansHubCloseUI then getgenv().WansHubCloseUI() end
+    end)
+    
+    local ToggleBtn = Instance.new("ImageButton", screenGui)
+    ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+    ToggleBtn.AnchorPoint = Vector2.new(0.5, 0.5) 
+    ToggleBtn.Position = UDim2.new(0.9, -35, 0.1, 25) 
+    ToggleBtn.BackgroundColor3 = Theme.Background
+    ToggleBtn.Image = "rbxassetid://91347112827105"
+    ToggleBtn.AutoButtonColor = true
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0,10)
+    local TStroke = Instance.new("UIStroke", ToggleBtn)
+    TStroke.Color = Theme.Accent
+    TStroke.Thickness = 2
+    Library:MakeDraggable(ToggleBtn)
+    
+    local isOpen = true
+    local function ToggleUI()
+        clickSound:Play() 
+        TweenService:Create(ToggleBtn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(0, 42, 0, 42)}):Play()
+        isOpen = not isOpen
+        if isOpen then
+            MainFrame.Visible = true
+            TweenService:Create(scale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        else
+            local closeTween = TweenService:Create(scale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0})
+            closeTween:Play()
+            task.spawn(function()
+                closeTween.Completed:Wait()
+                if not isOpen then MainFrame.Visible = false end
+            end)
+        end
+    end
+    
+    ToggleBtn.MouseButton1Click:Connect(ToggleUI)
+    
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if not gpe and input.KeyCode == _G.ToggleKey then
+            ToggleUI()
+        end
+    end)
+
+    local Window = {Frame = MainFrame, TabContainer = TabContainer, PagesContainer = PagesContainer, ActiveTab = nil, Tabs = {}}
+    
+    function Window:AddTab(nameKey)
+        local Page = Instance.new("ScrollingFrame", PagesContainer)
+        Page.Size = UDim2.new(1, 0, 1, 0)
+        Page.BackgroundTransparency = 1
+        Page.ScrollBarThickness = 3
+        Page.ScrollBarImageColor3 = Theme.Accent
+        Page.Visible = false
+        Page.ZIndex = 5 
+        Page.AutomaticCanvasSize = Enum.AutomaticSize.Y 
+        Page.CanvasSize = UDim2.new(0, 0, 0, 0) 
+        
+        local PageList = Instance.new("UIListLayout", Page)
+        PageList.Padding = UDim.new(0, 8)
+        PageList.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        
+        local Pad = Instance.new("UIPadding", Page)
+        Pad.PaddingTop = UDim.new(0,5)
+        Pad.PaddingLeft = UDim.new(0,5)
+        Pad.PaddingRight = UDim.new(0,5)
+        
+        local TabBtn = Instance.new("TextButton", TabContainer)
+        TabBtn.Size = UDim2.new(0.9, 0, 0, 38)
+        TabBtn.BackgroundColor3 = Theme.Background
+        TabBtn.BackgroundTransparency = 1
+        TabBtn.Text = T(nameKey)
+        TabBtn.TextColor3 = Theme.TextDim
+        TabBtn.Font = Enum.Font.GothamMedium
+        TabBtn.TextSize = 14
+        TabBtn.ZIndex = 12 
+        Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
+        
+        table.insert(UIUpdaters, function() TabBtn.Text = T(nameKey) end)
+        
+        local Indicator = Instance.new("Frame", TabBtn)
+        Indicator.Size = UDim2.new(0, 4, 0.6, 0)
+        Indicator.Position = UDim2.new(0, 0, 0.2, 0)
+        Indicator.BackgroundColor3 = Theme.Accent
+        Indicator.BackgroundTransparency = 1
+        Indicator.ZIndex = 13 
+        Instance.new("UICorner", Indicator).CornerRadius = UDim.new(0, 2)
+        
+        local function UpdateTab() 
+            for _, t in pairs(Window.Tabs) do 
+                TweenService:Create(t.Btn, TweenInfo.new(0.3), {BackgroundTransparency = 1, TextColor3 = Theme.TextDim}):Play()
+                TweenService:Create(t.Indicator, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+                t.Page.Visible = false 
+            end
+            TweenService:Create(TabBtn, TweenInfo.new(0.3), {BackgroundTransparency = 0.9, TextColor3 = Theme.Accent}):Play()
+            TweenService:Create(Indicator, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
+            Page.Visible = true 
+        end
+        
+        TabBtn.MouseButton1Click:Connect(UpdateTab)
+        if #Window.Tabs == 0 then Window.ActiveTab = TabBtn; UpdateTab() end
+        table.insert(Window.Tabs, {Btn = TabBtn, Page = Page, Indicator = Indicator})
+        
+        local Elements = {}
+        
+        function Elements:AddButton(textKey, callback) 
+            local BtnFrame = Instance.new("TextButton", Page)
+            BtnFrame.Size = UDim2.new(1, 0, 0, 40)
+            BtnFrame.BackgroundColor3 = Theme.ElementBg
+            BtnFrame.BackgroundTransparency = 0 
+            BtnFrame.ZIndex = 15 
+            BtnFrame.Text = T(textKey)
+            BtnFrame.TextColor3 = Theme.Text
+            BtnFrame.Font = Enum.Font.GothamMedium
+            BtnFrame.TextSize = 14
+            BtnFrame.AutoButtonColor = false
+            Instance.new("UICorner", BtnFrame).CornerRadius = UDim.new(0, 8)
+            local BtnStroke = Instance.new("UIStroke", BtnFrame)
+            BtnStroke.Color = Theme.Accent
+            BtnStroke.Thickness = 1
+            BtnStroke.Transparency = 0 
+            BtnFrame.MouseEnter:Connect(function() TweenService:Create(BtnFrame, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Hover}):Play() end)
+            BtnFrame.MouseLeave:Connect(function() TweenService:Create(BtnFrame, TweenInfo.new(0.2), {BackgroundColor3 = Theme.ElementBg}):Play() end)
+            BtnFrame.MouseButton1Click:Connect(function() pcall(callback) end) 
+            
+            table.insert(UIUpdaters, function() BtnFrame.Text = T(textKey) end)
+        end
+        
+        function Elements:AddToggle(textKey, default, callback) 
+            local ToggleFrame = Instance.new("TextButton", Page)
+            ToggleFrame.Size = UDim2.new(1, 0, 0, 45)
+            ToggleFrame.BackgroundColor3 = Theme.ElementBg
+            ToggleFrame.BackgroundTransparency = 0 
+            ToggleFrame.ZIndex = 15 
+            ToggleFrame.Text = ""
+            ToggleFrame.AutoButtonColor = false
+            Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
+            
+            local Title = Instance.new("TextLabel", ToggleFrame)
+            Title.Position = UDim2.new(0, 15, 0, 0)
+            Title.Size = UDim2.new(0.7, 0, 1, 0)
+            Title.BackgroundTransparency = 1
+            Title.ZIndex = 16
+            Title.Text = T(textKey)
+            Title.TextColor3 = Theme.Text
+            Title.Font = Enum.Font.GothamMedium
+            Title.TextSize = 14
+            Title.TextXAlignment = Enum.TextXAlignment.Left
+            
+            table.insert(UIUpdaters, function() Title.Text = T(textKey) end)
+            
+            local SwitchBg = Instance.new("Frame", ToggleFrame)
+            SwitchBg.Size = UDim2.new(0, 44, 0, 22)
+            SwitchBg.Position = UDim2.new(1, -60, 0.5, -11)
+            SwitchBg.BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(60,60,60)
+            SwitchBg.ZIndex = 16
+            Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
+            
+            local Circle = Instance.new("Frame", SwitchBg)
+            Circle.Size = UDim2.new(0, 18, 0, 18)
+            Circle.Position = default and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+            Circle.BackgroundColor3 = Color3.new(1,1,1)
+            Circle.ZIndex = 17
+            Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
+            
+            local Enabled = default
+            local function SetState(newState, fireCallback)
+                if Enabled == newState then return end
+                Enabled = newState
+                TweenService:Create(SwitchBg, TweenInfo.new(0.2), {BackgroundColor3 = Enabled and Theme.Accent or Color3.fromRGB(60,60,60)}):Play()
+                TweenService:Create(Circle, TweenInfo.new(0.2), {Position = Enabled and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)}):Play()
+                if fireCallback ~= false then pcall(callback, Enabled) end
+            end
+
+            ToggleFrame.MouseButton1Click:Connect(function() 
+                SetState(not Enabled, true)
+            end) 
+            return {Set = SetState, Frame = ToggleFrame} 
+        end
+        
+        function Elements:AddSlider(textKey, min, max, default, callback) 
+            local SliderFrame = Instance.new("Frame", Page)
+            SliderFrame.Size = UDim2.new(1, 0, 0, 55)
+            SliderFrame.BackgroundColor3 = Theme.ElementBg
+            SliderFrame.BackgroundTransparency = 0 
+            SliderFrame.ZIndex = 15 
+            Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 8)
+            
+            local Val = default
+            local Title = Instance.new("TextLabel", SliderFrame)
+            Title.Position = UDim2.new(0, 15, 0, 5)
+            Title.Size = UDim2.new(1, -30, 0, 20)
+            Title.BackgroundTransparency = 1
+            Title.ZIndex = 16
+            Title.Text = T(textKey) .. ": " .. Val
+            Title.TextColor3 = Theme.Text
+            Title.Font = Enum.Font.GothamMedium
+            Title.TextSize = 14
+            Title.TextXAlignment = Enum.TextXAlignment.Left
+            
+            table.insert(UIUpdaters, function() Title.Text = T(textKey) .. ": " .. Val end)
+            
+            local BarBg = Instance.new("Frame", SliderFrame)
+            BarBg.Size = UDim2.new(1, -30, 0, 6)
+            BarBg.Position = UDim2.new(0, 15, 0, 38)
+            BarBg.BackgroundColor3 = Color3.fromRGB(20,20,20)
+            BarBg.ZIndex = 16
+            Instance.new("UICorner", BarBg).CornerRadius = UDim.new(1,0)
+            
+            local Fill = Instance.new("Frame", BarBg)
+            Fill.Size = UDim2.new((default - min)/(max - min), 0, 1, 0)
+            Fill.BackgroundColor3 = Theme.Accent
+            Fill.ZIndex = 17
+            Instance.new("UICorner", Fill).CornerRadius = UDim.new(1,0)
+            
+            local Knob = Instance.new("Frame", Fill)
+            Knob.Size = UDim2.new(0, 12, 0, 12)
+            Knob.Position = UDim2.new(1, -6, 0.5, -6)
+            Knob.BackgroundColor3 = Color3.new(1,1,1)
+            Knob.ZIndex = 18
+            Instance.new("UICorner", Knob).CornerRadius = UDim.new(1,0)
+            
+            local Trigger = Instance.new("TextButton", BarBg)
+            Trigger.Size = UDim2.new(1,0,1,0)
+            Trigger.BackgroundTransparency = 1
+            Trigger.ZIndex = 19
+            Trigger.Text = ""
+            
+            local dragging = false
+            
+            Trigger.MouseButton1Down:Connect(function() dragging = true end)
+            UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+            UserInputService.InputChanged:Connect(function(input) 
+                if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then 
+                    local pos = math.clamp((input.Position.X - BarBg.AbsolutePosition.X) / BarBg.AbsoluteSize.X, 0, 1)
+                    local newVal = min + ((max - min) * pos)
+                    local multiplier = (max - min) <= 2 and 100 or 1
+                    newVal = math.floor(newVal * multiplier) / multiplier
+                    TweenService:Create(Fill, TweenInfo.new(0.05), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
+                    Val = newVal
+                    Title.Text = T(textKey) .. ": " .. Val
+                    if newVal ~= Val then pcall(callback, Val) end 
+                end 
+            end)
+            
+            local function SetValueIfAdded(v)
+                -- İleride güncellemek için boş eklendi
+            end
+            
+            return {Set = SetValueIfAdded, Frame = SliderFrame} 
+        end
+        
+        -- ARAMA ÖZELLİKLİ DROPDOWN (YENİ SİSTEM)
+        function Elements:AddDropdown(textKey, options, default, callback) 
+            local rawSelection = default
+            
+            local DropContainer = Instance.new("Frame", Page)
+            DropContainer.Size = UDim2.new(1, 0, 0, 40)
+            DropContainer.BackgroundTransparency = 1
+            DropContainer.ClipsDescendants = true 
+            DropContainer.ZIndex = 15
+            
+            local DropFrame = Instance.new("Frame", DropContainer)
+            DropFrame.Size = UDim2.new(1, 0, 0, 40)
+            DropFrame.BackgroundColor3 = Theme.ElementBg
+            DropFrame.BackgroundTransparency = 0 
+            DropFrame.ZIndex = 15
+            Instance.new("UICorner", DropFrame).CornerRadius = UDim.new(0, 8)
+            
+            local Label = Instance.new("TextLabel", DropFrame)
+            Label.Size = UDim2.new(0.4, 0, 1, 0)
+            Label.Position = UDim2.new(0, 15, 0, 0)
+            Label.BackgroundTransparency = 1
+            Label.ZIndex = 16
+            Label.Text = T(textKey)
+            Label.TextColor3 = Theme.Text
+            Label.Font = Enum.Font.GothamMedium
+            Label.TextSize = 14
+            Label.TextXAlignment = Enum.TextXAlignment.Left
+            
+            local Button = Instance.new("TextButton", DropFrame)
+            Button.Size = UDim2.new(0.5, 0, 0.7, 0)
+            Button.Position = UDim2.new(0.48, 0, 0.15, 0)
+            Button.BackgroundColor3 = Theme.Background
+            Button.BackgroundTransparency = 0 
+            Button.ZIndex = 16
+            Button.Text = T(rawSelection) .. " ▼"
+            Button.TextColor3 = Theme.Accent
+            Button.Font = Enum.Font.GothamBold
+            Button.TextSize = 12
+            Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
+            
+            local isOpen = false
+            
+            -- SEARCH BOX (ARAMA ÇUBUĞU)
+            local SearchBox = Instance.new("TextBox", DropContainer)
+            SearchBox.Size = UDim2.new(1, -20, 0, 26)
+            SearchBox.Position = UDim2.new(0, 10, 0, 45)
+            SearchBox.BackgroundColor3 = Theme.Background
+            SearchBox.TextColor3 = Theme.Text
+            SearchBox.Font = Enum.Font.Gotham
+            SearchBox.TextSize = 12
+            SearchBox.PlaceholderText = T("Search...")
+            SearchBox.Visible = false
+            SearchBox.ClearTextOnFocus = false
+            Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 4)
+            local SearchStroke = Instance.new("UIStroke", SearchBox)
+            SearchStroke.Color = Theme.Accent
+            SearchStroke.Thickness = 1
+            SearchStroke.Transparency = 0.6
+            
+            local ListFrame = Instance.new("ScrollingFrame", DropContainer)
+            ListFrame.Size = UDim2.new(1, 0, 1, -75) -- SearchBox için boşluk
+            ListFrame.Position = UDim2.new(0, 0, 0, 75)
+            ListFrame.Visible = false
+            ListFrame.BackgroundColor3 = Theme.Sidebar
+            ListFrame.BorderSizePixel = 0
+            ListFrame.ZIndex = 20 
+            ListFrame.ScrollBarThickness = 3
+            ListFrame.ScrollBarImageColor3 = Theme.Accent
+            ListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y 
+            Instance.new("UICorner", ListFrame).CornerRadius = UDim.new(0, 8)
+            local Layout = Instance.new("UIListLayout", ListFrame)
+            Layout.Padding = UDim.new(0,2)
+            
+            SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                local query = string.lower(SearchBox.Text)
+                for _, v in pairs(ListFrame:GetChildren()) do
+                    if v:IsA("TextButton") then
+                        if query == "" or string.find(string.lower(v.Text), query) then
+                            v.Visible = true
+                        else
+                            v.Visible = false
+                        end
+                    end
+                end
+            end)
+
+            Button.MouseButton1Click:Connect(function() 
+                isOpen = not isOpen
+                SearchBox.Visible = isOpen
+                if isOpen then
+                    SearchBox.Text = "" -- Her açılışta aramayı temizle
+                    ListFrame.Visible = true
+                    TweenService:Create(DropContainer, TweenInfo.new(0.2), {Size = UDim2.new(1, 0, 0, 195)}):Play()
+                else
+                    TweenService:Create(DropContainer, TweenInfo.new(0.2), {Size = UDim2.new(1, 0, 0, 40)}):Play()
+                    task.delay(0.2, function()
+                        if not isOpen then ListFrame.Visible = false; SearchBox.Visible = false end
+                    end)
+                end
+            end)
+            
+            local function Refresh() 
+                for _,v in pairs(ListFrame:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+                local opts = type(options) == "function" and options() or options
+                for _, opt in ipairs(opts) do 
+                    if opt == "Canavar Bulunamadı" or opt == "Boss Bulunamadı" or opt == "NPC Bulunamadı" then continue end 
+                    local OptBtn = Instance.new("TextButton", ListFrame)
+                    OptBtn.Size = UDim2.new(1,0,0,30)
+                    OptBtn.BackgroundColor3 = Theme.Background
+                    OptBtn.Text = T(opt)
+                    OptBtn.TextColor3 = Theme.TextDim
+                    OptBtn.Font = Enum.Font.Gotham
+                    OptBtn.TextSize = 13
+                    OptBtn.ZIndex = 21 
+                    OptBtn.BorderSizePixel = 0
+                    OptBtn.MouseEnter:Connect(function() OptBtn.TextColor3 = Theme.Accent end)
+                    OptBtn.MouseLeave:Connect(function() OptBtn.TextColor3 = Theme.TextDim end)
+                    OptBtn.MouseButton1Click:Connect(function() 
+                        rawSelection = opt
+                        Button.Text = T(rawSelection) .. " ▼"
+                        isOpen = false
+                        SearchBox.Visible = false
+                        TweenService:Create(DropContainer, TweenInfo.new(0.2), {Size = UDim2.new(1, 0, 0, 40)}):Play()
+                        task.delay(0.2, function() ListFrame.Visible = false end)
+                        callback(opt) 
+                    end) 
+                end 
+                if #ListFrame:GetChildren() <= 1 then
+                    local empty = Instance.new("TextLabel", ListFrame)
+                    empty.Size = UDim2.new(1,0,0,30)
+                    empty.BackgroundTransparency = 1
+                    empty.Text = T("No Data Yet")
+                    empty.TextColor3 = Theme.TextDim
+                end
+            end
+            
+            local function SetValue(val)
+                rawSelection = val
+                Button.Text = T(rawSelection) .. " ▼"
+                isOpen = false
+                SearchBox.Visible = false
+                TweenService:Create(DropContainer, TweenInfo.new(0.2), {Size = UDim2.new(1, 0, 0, 40)}):Play()
+                task.delay(0.2, function() ListFrame.Visible = false end)
+                pcall(callback, val)
+            end
+            
+            local function SetTextOnly(val)
+                rawSelection = val
+                Button.Text = T(rawSelection) .. " ▼"
+            end
+            
+            table.insert(UIUpdaters, function()
+                Label.Text = T(textKey)
+                Button.Text = T(rawSelection) .. " ▼"
+                SearchBox.PlaceholderText = T("Search...")
+                Refresh() 
+            end)
+            
+            Refresh()
+            return {Refresh = Refresh, Set = SetValue, SetText = SetTextOnly}
+        end
+        return Elements
+    end
+    return Window
+end
+
+-- =============================================================================
+-- ⚔️ OYUN İÇİ FONKSİYONLAR VE KATEGORİZASYON
+-- =============================================================================
+local isimOnbellek = {}
+local function TemizIsim(isim)
+    if isimOnbellek[isim] then return isimOnbellek[isim] end
+    local temiz = string.gsub(isim, "%d+$", "") 
+    temiz = string.gsub(temiz, "%[Lv%.?%s*%d+%]", "")
+    temiz = string.gsub(temiz, "%(Lv%.?%s*%d+%)", "") 
+    temiz = string.gsub(temiz, "^%s*(.-)%s*$", "%1") 
+    isimOnbellek[isim] = temiz
+    return temiz
+end
+
+local function SilahlariGuncelle()
+    local yeniSilahBulundu = false
+    local yeniSilahListesi = {}
+    local mevcutMap = {}
+    for _, w in ipairs(currentWeapons) do mevcutMap[w] = true end
+    for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+        if item:IsA("Tool") and not table.find(yeniSilahListesi, item.Name) then
+            table.insert(yeniSilahListesi, item.Name)
+            if not mevcutMap[item.Name] then yeniSilahBulundu = true end
+        end
+    end
+    if LocalPlayer.Character then
+        for _, item in pairs(LocalPlayer.Character:GetChildren()) do
+            if item:IsA("Tool") and not table.find(yeniSilahListesi, item.Name) then
+                table.insert(yeniSilahListesi, item.Name)
+                if not mevcutMap[item.Name] then yeniSilahBulundu = true end
+            end
+        end
+    end
+    if #yeniSilahListesi == 0 then table.insert(yeniSilahListesi, "Weapon Not Found") end
+    if #yeniSilahListesi ~= #currentWeapons then yeniSilahBulundu = true end
+    if yeniSilahBulundu then currentWeapons = yeniSilahListesi end
+    return yeniSilahBulundu
+end
+
+local function SilahlariGetir() return currentWeapons end
+
+LoadCache()
+SilahlariGuncelle() 
+
+local function ListeleriGuncelle()
+    local yeniBulundu = false
+    local function TipeGoreEkle(isim, tur, pos)
+        local temiz = TemizIsim(isim)
+        if temiz == "" or temiz == "Model" or temiz == "Part" or temiz == "Folder" then return end
+        if Players:FindFirstChild(temiz) then return end
+        if tur == "NPC" then
+            if not npcSet[temiz] then npcSet[temiz] = true; table.insert(_G.Npcler, temiz); yeniBulundu = true end
+        elseif tur == "Boss" then
+            if not bossSet[temiz] then bossSet[temiz] = true; table.insert(_G.Bosslar, temiz); yeniBulundu = true end
+        else
+            if not canavarSet[temiz] then canavarSet[temiz] = true; table.insert(_G.Canavarlar, temiz); yeniBulundu = true end
+        end
+        if pos and not _G.Koordinatlar[temiz] then
+            _G.Koordinatlar[temiz] = pos
+            yeniBulundu = true
+        end
+    end
+    local enemiesFolder = workspace:FindFirstChild("NPCs")
+    if enemiesFolder then
+        for _, obj in ipairs(enemiesFolder:GetChildren()) do
+            if obj:IsA("Model") then
+                local hrp = obj:FindFirstChild("HumanoidRootPart")
+                local pos = hrp and hrp.Position or (obj.PrimaryPart and obj.PrimaryPart.Position)
+                if pos and not Players:GetPlayerFromCharacter(obj) then
+                    local isimLower = string.lower(obj.Name)
+                    if string.find(isimLower, "boss") then
+                        TipeGoreEkle(obj.Name, "Boss", pos)
+                    else
+                        TipeGoreEkle(obj.Name, "Canavar", pos)
+                    end
+                end
+            end
+        end
+    end
+    local serviceFolder = workspace:FindFirstChild("ServiceNPCs")
+    if serviceFolder then
+        for _, obj in ipairs(serviceFolder:GetChildren()) do
+            if obj:IsA("Model") then
+                local hrp = obj:FindFirstChild("HumanoidRootPart")
+                local pos = hrp and hrp.Position or (obj.PrimaryPart and obj.PrimaryPart.Position)
+                if pos then TipeGoreEkle(obj.Name, "NPC", pos) end
+            end
+        end
+    end
+    if yeniBulundu then
+        table.sort(_G.Canavarlar)
+        table.sort(_G.Bosslar)
+        table.sort(_G.Npcler)
+        SaveCache()
+    end
+    return yeniBulundu
+end
+ListeleriGuncelle()
+
+local function GetKoordinat(isim)
+    if _G.Koordinatlar[isim] then return _G.Koordinatlar[isim] end
+    return nil
+end
+
+-- =============================================================================
+-- 📊 OYUNCU LEVELİNİ BULMA SİSTEMİ
+-- =============================================================================
+local function OyuncuLeveliniGetir()
+    local level = nil
+    pcall(function()
+        local ls = LocalPlayer:FindFirstChild("leaderstats")
+        if ls then
+            for _, v in ipairs(ls:GetChildren()) do
+                local n = string.lower(v.Name)
+                if n == "level" or n == "lvl" or n == "lv" then
+                    level = tonumber(v.Value)
+                    return
+                end
+            end
+        end
+        
+        local data = LocalPlayer:FindFirstChild("Data")
+        if data then
+            for _, v in ipairs(data:GetChildren()) do
+                local n = string.lower(v.Name)
+                if n == "level" or n == "lvl" or n == "lv" then
+                    level = tonumber(v.Value)
+                    return
+                end
+            end
+        end
+
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, v in ipairs(pg:GetDescendants()) do
+                if v:IsA("TextLabel") and v.Visible then
+                    local txt = string.lower(string.gsub(v.Text, " ", ""))
+                    local l1 = string.match(txt, "^level(%d+)$")
+                    local l2 = string.match(txt, "^lv%.?(%d+)$")
+                    local l3 = string.match(txt, "^[%[%(]lv%.?(%d+)[%]%)]$")
+                    
+                    local found = l1 or l2 or l3
+                    if found then
+                        level = tonumber(found)
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    
+    return level or 1
+end
+
+-- =============================================================================
+-- ❌ GÖREV İPTAL ETME VE DURUM KONTROL SİSTEMİ
+-- =============================================================================
+local function EkrandaGorunurMu(gui)
+    local current = gui
+    while current and current:IsA("GuiObject") do
+        if not current.Visible then return false end
+        current = current.Parent
+    end
+    if current and current:IsA("ScreenGui") then
+        return current.Enabled
+    end
+    return true
+end
+
+local function GorevVarMi()
+    local aktif = false
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, v in ipairs(pg:GetDescendants()) do
+                if v:IsA("GuiObject") and EkrandaGorunurMu(v) then
+                    local n = string.lower(v.Name)
+                    local t = ""
+                    if v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("TextBox") then
+                        t = string.lower(v.Text or "")
+                    end
+                    
+                    local pName = v.Parent and string.lower(v.Parent.Name) or ""
+                    local isQuestUI = string.find(n, "quest") or string.find(n, "tracker") or string.find(n, "task") or string.find(n, "mission") or
+                                      string.find(pName, "quest") or string.find(pName, "tracker") or string.find(pName, "task") or string.find(pName, "mission")
+                    
+                    if isQuestUI then
+                        if string.find(t, "/") or string.find(t, "defeat") or string.find(t, "kill") or string.find(t, "progress") then
+                            aktif = true
+                            break
+                        end
+                        if _G.AktifHedef ~= "" and string.find(t, string.lower(_G.AktifHedef)) then
+                            aktif = true
+                            break
+                        end
+                    else
+                        if string.find(t, "/") and (string.find(t, "defeat") or string.find(t, "kill") or (_G.AktifHedef ~= "" and string.find(t, string.lower(_G.AktifHedef)))) then
+                            aktif = true
+                            break
+                        end
+                    end
+                    
+                    if v:IsA("TextButton") or v:IsA("ImageButton") then
+                        if string.find(n, "cancel") or string.find(n, "abandon") or string.find(n, "drop") or
+                           string.find(t, "cancel") or string.find(t, "abandon") or string.find(t, "drop") then
+                            if isQuestUI then
+                                aktif = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return aktif
+end
+
+local function GoreviIptalEt()
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, v in ipairs(pg:GetDescendants()) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) and EkrandaGorunurMu(v) then
+                    local parentIsQuest = false
+                    local currentParent = v.Parent
+                    for i = 1, 5 do 
+                        if currentParent and (currentParent:IsA("GuiObject") or currentParent:IsA("ScreenGui")) then
+                            local pName = string.lower(currentParent.Name)
+                            if string.find(pName, "quest") or string.find(pName, "task") or string.find(pName, "tracker") or string.find(pName, "mission") then
+                                parentIsQuest = true
+                                break
+                            end
+                            currentParent = currentParent.Parent
+                        else
+                            break
+                        end
+                    end
+
+                    if parentIsQuest then
+                        local n = string.lower(v.Name)
+                        local t = v:IsA("TextButton") and string.lower(v.Text) or ""
+                        if string.find(n, "cancel") or string.find(n, "abandon") or string.find(n, "quit") or string.find(n, "drop") or
+                           string.find(t, "cancel") or string.find(t, "abandon") or string.find(t, "quit") or string.find(t, "drop") then
+                            
+                            if getconnections then
+                                for _, conn in pairs(getconnections(v.MouseButton1Click)) do conn:Fire() end
+                            end
+                            
+                            local cx = v.AbsolutePosition.X + (v.AbsoluteSize.X / 2)
+                            local cy = v.AbsolutePosition.Y + (v.AbsoluteSize.Y / 2) + 36
+                            VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                            task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                        end
+                    end
+                end
+            end
+        end
+        
+        for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
+            if v:IsA("RemoteEvent") then
+                local rName = string.lower(v.Name)
+                if string.find(rName, "quest") and (string.find(rName, "cancel") or string.find(rName, "abandon") or string.find(rName, "drop")) then
+                    v:FireServer()
+                    v:FireServer("Cancel")
+                    v:FireServer("Abandon")
+                end
+            end
+        end
+    end)
+end
+
+-- =============================================================================
+-- 👑 OTO BOSS ROTASYONU (TÜM BOSSLARI GEZME)
+-- =============================================================================
+task.spawn(function()
+    local sonGecisZamani = 0
+    while getgenv().SailorGoldLoaded do
+        task.wait(1)
+        if _G.OtoTumBosslar then
+            if #_G.Bosslar == 0 then continue end
+            if _G.MevcutBossIndex > #_G.Bosslar then
+                _G.MevcutBossIndex = 1
+            end
+
+            local bossAdi = _G.Bosslar[_G.MevcutBossIndex]
+            _G.AutoFarm = true
+            _G.AktifHedef = bossAdi
+
+            if not gecerliHedef then
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local coord = GetKoordinat(bossAdi)
+
+                if root and coord then
+                    local dist = (root.Position - coord).Magnitude
+                    if dist < 60 then
+                        if tick() - sonGecisZamani > 4 then
+                            _G.MevcutBossIndex = _G.MevcutBossIndex + 1
+                            sonGecisZamani = tick()
+                        end
+                    else
+                        sonGecisZamani = tick() 
+                    end
+                else
+                    _G.MevcutBossIndex = _G.MevcutBossIndex + 1
+                    sonGecisZamani = tick()
+                end
+            else
+                sonGecisZamani = tick()
+            end
+        end
+    end
+end)
+
+
+-- =============================================================================
+-- 🛡️ FARM SISTEMLERI
+-- =============================================================================
+local AntiKickPlatform = workspace:FindFirstChild("WansAntiKickPlatform")
+if not AntiKickPlatform then
+    AntiKickPlatform = Instance.new("Part")
+    AntiKickPlatform.Name = "WansAntiKickPlatform"
+    AntiKickPlatform.Size = Vector3.new(15, 1, 15)
+    AntiKickPlatform.Anchored = true
+    AntiKickPlatform.CanCollide = true
+    AntiKickPlatform.Transparency = 1 
+    AntiKickPlatform.Parent = workspace
+end
+
+task.spawn(function()
+    while getgenv().SailorGoldLoaded and task.wait(0.5) do
+        local farmAktif = _G.AutoFarm or _G.OtoLevel or _G.OtoTumBosslar
+        
+        if _G.TowerFarm then
+            local enIyiHedef = nil
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local maxMesafe = math.huge
+            local aramaKlasoru = workspace:FindFirstChild("NPCs")
+            
+            if aramaKlasoru then
+                for _, dusman in ipairs(aramaKlasoru:GetChildren()) do
+                    if dusman:IsA("Model") and dusman:FindFirstChild("Humanoid") and dusman.Humanoid.Health > 0 and dusman:FindFirstChild("HumanoidRootPart") then
+                        if not dusman.HumanoidRootPart.Anchored and not Players:GetPlayerFromCharacter(dusman) then
+                            if root then
+                                local mesafe = (dusman.HumanoidRootPart.Position - root.Position).Magnitude
+                                if mesafe < maxMesafe then
+                                    maxMesafe = mesafe
+                                    enIyiHedef = dusman
+                                end
+                            else
+                                enIyiHedef = dusman
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            
+            gecerliHedef = enIyiHedef
+            if not gecerliHedef then
+                _G.UcakKoordinat = nil
+            else
+                _G.UcakKoordinat = nil
+            end
+            
+        elseif farmAktif and _G.AktifHedef ~= "" and _G.AktifHedef ~= "None Selected" and _G.AktifHedef ~= "Clear Selection" then
+            local enIyiHedef = nil
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local maxMesafe = math.huge
+            local aramaKlasoru = workspace:FindFirstChild("NPCs")
+            
+            if aramaKlasoru then
+                for _, dusman in ipairs(aramaKlasoru:GetChildren()) do
+                    if dusman:IsA("Model") and dusman:FindFirstChild("Humanoid") and dusman.Humanoid.Health > 0 and dusman:FindFirstChild("HumanoidRootPart") then
+                        if not dusman.HumanoidRootPart.Anchored then
+                            if TemizIsim(dusman.Name) == _G.AktifHedef then
+                                _G.Koordinatlar[_G.AktifHedef] = dusman.HumanoidRootPart.Position
+                                if root then
+                                    local mesafe = (dusman.HumanoidRootPart.Position - root.Position).Magnitude
+                                    if mesafe < maxMesafe then
+                                        maxMesafe = mesafe
+                                        enIyiHedef = dusman
+                                    end
+                                else
+                                    enIyiHedef = dusman
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            gecerliHedef = enIyiHedef
+            if not gecerliHedef then
+                local coord = GetKoordinat(_G.AktifHedef)
+                if not coord then
+                    local npcKoor = _G.GorevNPC_Koordinatlari[_G.AktifHedef]
+                    if npcKoor then
+                        coord = npcKoor + Vector3.new(0, 30, 0)
+                    end
+                end
+                _G.UcakKoordinat = coord
+            else
+                _G.UcakKoordinat = nil
+            end
+        else
+            gecerliHedef = nil
+            _G.UcakKoordinat = nil
+        end
+    end
+end)
+
+-- GÖREV ETKİLEŞİM DÖNGÜSÜ (E Tuşu)
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(0.5)
+        local farmAktif = _G.AutoFarm or _G.OtoLevel
+        local gorevAktif = _G.OtoGorev or _G.OtoLevel
+        if farmAktif and gorevAktif and not _G.OtoTumBosslar and _G.AktifHedef ~= "" and _G.AktifHedef ~= "None Selected" and _G.AktifHedef ~= "Clear Selection" and _G.MevcutGorevHedefi ~= _G.AktifHedef then
+            local gorevKoor = _G.GorevNPC_Koordinatlari[_G.AktifHedef]
+            if gorevKoor then
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local dist = (root.Position - gorevKoor).Magnitude
+                    if dist <= 15 then 
+                        pcall(function()
+                            for _, v in pairs(workspace:GetDescendants()) do
+                                if v:IsA("ProximityPrompt") then
+                                    local part = v.Parent
+                                    if part and part:IsA("BasePart") then
+                                        if (part.Position - root.Position).Magnitude <= (v.MaxActivationDistance + 5) then
+                                            fireproximityprompt(v)
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                        
+                        pcall(function()
+                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                            task.wait(0.1)
+                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        end)
+                        
+                        task.wait(1.5) 
+                        _G.MevcutGorevHedefi = _G.AktifHedef 
+                        _G.SonGorevZamani = tick() 
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- KAYIP GÖREV TAKİP DÖNGÜSÜ
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(2)
+        local farmAktif = _G.AutoFarm or _G.OtoLevel
+        local gorevAktif = _G.OtoGorev or _G.OtoLevel
+        if farmAktif and gorevAktif and _G.MevcutGorevHedefi ~= "" and not _G.OtoTumBosslar then
+            if _G.SonGorevZamani and (tick() - _G.SonGorevZamani) < 6 then
+                continue
+            end
+            
+            if not GorevVarMi() then
+                _G.MevcutGorevHedefi = "" 
+            end
+        end
+    end
+end)
+
+-- 🌟 OTO LEVEL KONTROL DÖNGÜSÜ
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(3)
+        if _G.OtoLevel then
+            if _G.SecilenSilah == "" or _G.SecilenSilah == "None Selected" or _G.SecilenSilah == "Clear Selection" then
+                local silahlar = SilahlariGetir()
+                if silahlar and #silahlar > 0 and silahlar[1] ~= "Weapon Not Found" then
+                    if _G.SilahDropdownRehberi and _G.SilahDropdownRehberi.Set then
+                        _G.SilahDropdownRehberi.Set(silahlar[1])
+                    else
+                        _G.SecilenSilah = silahlar[1]
+                    end
+                end
+            end
+
+            local guncelLevel = OyuncuLeveliniGetir()
+            local siradakiHedef = ""
+            
+            for _, veri in ipairs(_G.LevelRehberi) do
+                if guncelLevel >= veri.Min and guncelLevel <= veri.Max then
+                    siradakiHedef = veri.Hedef
+                    break
+                end
+            end
+            
+            if siradakiHedef ~= "" and _G.AktifHedef ~= siradakiHedef then
+                pcall(function()
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "🌟 Auto Level";
+                        Text = "Level " .. guncelLevel .. " detected! Target: " .. siradakiHedef;
+                        Duration = 5;
+                    })
+                end)
+                
+                if _G.NormalDropdownRehberi and _G.NormalDropdownRehberi.Set then
+                    _G.NormalDropdownRehberi.Set(siradakiHedef)
+                else
+                    _G.AktifHedef = siradakiHedef
+                end
+                
+                if _G.OtoGorev or _G.OtoLevel then
+                    GoreviIptalEt() 
+                end
+                
+                _G.MevcutGorevHedefi = "" 
+            end
+        end
+    end
+end)
+
+
+local NoclipBaglantisi
+NoclipBaglantisi = RunService.Heartbeat:Connect(function(deltaTime)
+    if not getgenv().SailorGoldLoaded then
+        NoclipBaglantisi:Disconnect()
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+
+    local farmAktif = _G.AutoFarm or _G.OtoLevel or _G.TowerFarm or _G.OtoTumBosslar
+    local gorevAktif = _G.OtoGorev or _G.OtoLevel
+
+    if _G.TeleportingTo then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+        end
+        root.Velocity = Vector3.new(0,0,0)
+        root.RotVelocity = Vector3.new(0,0,0)
+        local targetPos = _G.TeleportingTo + Vector3.new(0, 20, 0)
+        local dist = (root.Position - targetPos).Magnitude
+        
+        if dist > 30 then
+            local moveAmount = math.min(dist, _G.UcusHizi * deltaTime)
+            local moveDir = (targetPos - root.Position).Unit
+            root.CFrame = CFrame.new(root.Position + (moveDir * moveAmount))
+        else
+            root.CFrame = CFrame.new(targetPos)
+            if not _G.HaritaTaraniyor then
+                _G.TeleportingTo = nil 
+            end
+        end
+        AntiKickPlatform.CFrame = root.CFrame * CFrame.new(0, -3.2, 0)
+        return
+    end
+
+    if farmAktif then
+        if gorevAktif and not _G.OtoTumBosslar and _G.AktifHedef ~= "" and _G.AktifHedef ~= "None Selected" and _G.AktifHedef ~= "Clear Selection" and _G.MevcutGorevHedefi ~= _G.AktifHedef then
+            local gorevKoor = _G.GorevNPC_Koordinatlari[_G.AktifHedef]
+            if gorevKoor then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+                end
+                
+                root.Velocity = Vector3.new(0,0,0)
+                root.RotVelocity = Vector3.new(0,0,0)
+                
+                local targetPos = gorevKoor
+                local dist = (root.Position - targetPos).Magnitude
+                
+                if dist > 10 then
+                    local moveAmount = math.min(dist, _G.UcusHizi * deltaTime)
+                    local moveDir = (targetPos - root.Position).Unit
+                    root.CFrame = CFrame.new(root.Position + (moveDir * moveAmount))
+                else
+                    root.CFrame = CFrame.new(targetPos)
+                end
+                AntiKickPlatform.CFrame = root.CFrame * CFrame.new(0, -3.2, 0)
+                return 
+            else
+                _G.MevcutGorevHedefi = _G.AktifHedef
+            end
+        end
+
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+        end
+
+        if gecerliHedef and gecerliHedef:FindFirstChild("HumanoidRootPart") then
+            local hedefHRP = gecerliHedef.HumanoidRootPart
+            local guvenliBoyut = 300 
+            hedefHRP.Size = Vector3.new(guvenliBoyut, guvenliBoyut, guvenliBoyut)
+            hedefHRP.Transparency = 1 
+            hedefHRP.CanCollide = false
+            
+            if gecerliHedef:FindFirstChild("Head") then
+                gecerliHedef.Head.Size = Vector3.new(guvenliBoyut, guvenliBoyut, guvenliBoyut)
+                gecerliHedef.Head.Transparency = 1
+                gecerliHedef.Head.CanCollide = false
+            end
+            if gecerliHedef:FindFirstChild("Torso") then
+                gecerliHedef.Torso.Size = Vector3.new(guvenliBoyut, guvenliBoyut, guvenliBoyut)
+                gecerliHedef.Torso.Transparency = 1
+                gecerliHedef.Torso.CanCollide = false
+            end
+            if gecerliHedef:FindFirstChild("UpperTorso") then
+                gecerliHedef.UpperTorso.Size = Vector3.new(guvenliBoyut, guvenliBoyut, guvenliBoyut)
+                gecerliHedef.UpperTorso.Transparency = 1
+                gecerliHedef.UpperTorso.CanCollide = false
+            end
+
+            for _, part in ipairs(gecerliHedef:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+            end
+
+            root.Velocity = Vector3.new(0,0,0)
+            root.RotVelocity = Vector3.new(0,0,0)
+            
+            local targetPos = hedefHRP.Position + Vector3.new(0, _G.Mesafe, 0) 
+            if _G.VurusYonu == "Bottom" or _G.VurusYonu == "Altından" then
+                targetPos = hedefHRP.Position + Vector3.new(0, -_G.Mesafe, 0)
+            elseif _G.VurusYonu == "Behind" or _G.VurusYonu == "Arkasından" then
+                local bKCF = gecerliHedef:GetPivot()
+                targetPos = hedefHRP.Position + (bKCF.LookVector * -_G.Mesafe)
+            end
+            
+            local dist = (root.Position - targetPos).Magnitude
+            
+            if dist > 30 then
+                local moveAmount = math.min(dist, _G.UcusHizi * deltaTime)
+                local moveDir = (targetPos - root.Position).Unit
+                root.CFrame = CFrame.new(root.Position + (moveDir * moveAmount), hedefHRP.Position)
+            else
+                root.CFrame = CFrame.new(targetPos, hedefHRP.Position)
+            end
+            AntiKickPlatform.CFrame = root.CFrame * CFrame.new(0, -3.2, 0)
+
+        elseif _G.UcakKoordinat then
+            root.Velocity = Vector3.new(0,0,0)
+            root.RotVelocity = Vector3.new(0,0,0)
+            local targetPos = _G.UcakKoordinat + Vector3.new(0, 50, 0) 
+            local dist = (root.Position - targetPos).Magnitude
+            
+            if dist > 30 then
+                local moveAmount = math.min(dist, _G.UcusHizi * deltaTime)
+                local moveDir = (targetPos - root.Position).Unit
+                root.CFrame = CFrame.new(root.Position + (moveDir * moveAmount))
+            else
+                root.CFrame = CFrame.new(targetPos)
+            end
+            AntiKickPlatform.CFrame = root.CFrame * CFrame.new(0, -3.2, 0)
+        else
+            AntiKickPlatform.CFrame = CFrame.new(0, -9999, 0)
+        end
+    else
+        AntiKickPlatform.CFrame = CFrame.new(0, -9999, 0)
+    end
+end)
+
+-- YENİ NESİL: KONSOL SİMÜLASYONLU KUSURSUZ (AURA) VURUŞ DÖNGÜSÜ
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(_G.SaldiriHizi) 
+        
+        -- DÜZELTME 1: Sohbet (Chat) veya ESC Menüsü açıkken durmasını sağlayan eski kod tamamen SİLİNDİ.
+        -- Artık chatte yazı yazarken veya ayarlardayken farm kusursuzca devam edecek.
+        
+        local farmAktif = _G.AutoFarm or _G.OtoLevel or _G.TowerFarm or _G.OtoTumBosslar
+        if _G.SecilenSilah ~= "" and _G.SecilenSilah ~= "None Selected" and _G.SecilenSilah ~= "Clear Selection" and _G.SecilenSilah ~= "Weapon Not Found" then
+            if (farmAktif and gecerliHedef and gecerliHedef:FindFirstChild("Humanoid") and gecerliHedef.Humanoid.Health > 0) or _G.OtoVurus then
+                pcall(function()
+                    local char = LocalPlayer.Character
+                    if not char then return end
+                    local tool = char:FindFirstChild(_G.SecilenSilah) or LocalPlayer.Backpack:FindFirstChild(_G.SecilenSilah)
+                    if tool and tool:IsA("Tool") then
+                        if tool.Parent ~= char then
+                            char.Humanoid:EquipTool(tool)
+                            task.wait(0.05) 
+                        end
+                        
+                        -- 1. ESKİ YÖNTEM: Standart eşya kullanımı
+                        tool:Activate() 
+                        
+                        -- 2. OYUNUN KENDİ REMOTE'U (GamepadAttackTrigger)
+                        local rs = game:GetService("ReplicatedStorage")
+                        local remoteFolder = rs:FindFirstChild("RemoteEvents") or rs
+                        local gamepadRemote = remoteFolder:FindFirstChild("GamepadAttackTrigger")
+                        
+                        if gamepadRemote and gamepadRemote:IsA("RemoteEvent") then
+                            gamepadRemote:FireServer()
+                            gamepadRemote:FireServer(Enum.UserInputState.Begin)
+                            gamepadRemote:FireServer(true)
+                            gamepadRemote:FireServer(1)
+                        end
+                        
+                        -- 3. KONSOL SİMÜLASYONU (Z SKILL BUG FIX)
+                        -- DÜZELTME 2: Yanlışlıkla Z yeteneğini (Skill 1) tetikleyen "ButtonX" kodu SİLİNDİ.
+                        local vim = game:GetService("VirtualInputManager")
+                        
+                        -- Sadece standart düz vuruş (M1) için R2 (Sağ Alt Tetik) sinyali atandı. (R1 envanter değiştirir!)
+                        vim:SendKeyEvent(true, Enum.KeyCode.ButtonR2, false, game)
+                        task.wait(0.01)
+                        vim:SendKeyEvent(false, Enum.KeyCode.ButtonR2, false, game)
+                        
+                        -- Not: Yanlış/Eksik paketlerle "Hit" Remote'u spamlayan kodlar tamamen silindi!
+                        -- Çünkü onlar sadece görsel efekt (VFX) yaratıyor ve hasarı engelliyordu.
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+-- =============================================================================
+-- 🚀 YENİ: OTO YETENEK KULLANIMI (SIRALI GECİKMELİ & FİLTRELİ)
+-- =============================================================================
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(0.1)
+        if _G.AutoFarm and _G.AutoSkills and gecerliHedef and gecerliHedef:FindFirstChild("Humanoid") and gecerliHedef.Humanoid.Health > 0 then
+            pcall(function()
+                local keys = {}
+                if _G.UseSkillZ then table.insert(keys, Enum.KeyCode.Z) end
+                if _G.UseSkillX then table.insert(keys, Enum.KeyCode.X) end
+                if _G.UseSkillC then table.insert(keys, Enum.KeyCode.C) end
+                if _G.UseSkillV then table.insert(keys, Enum.KeyCode.V) end
+                if _G.UseSkillF then table.insert(keys, Enum.KeyCode.F) end
+                
+                for _, key in ipairs(keys) do
+                    if not _G.AutoFarm or not _G.AutoSkills or not gecerliHedef or not (gecerliHedef:FindFirstChild("Humanoid") and gecerliHedef.Humanoid.Health > 0) then break end
+                    VirtualInputManager:SendKeyEvent(true, key, false, game)
+                    task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(false, key, false, game)
+                    -- Her animasyon bittiğini hissetmek ve oyunun cooldownuna izin vermek için belirlenen saniye bekle
+                    task.wait(_G.SkillDelay or 2.5) 
+                end
+            end)
+        end
+    end
+end)
+
+-- =============================================================================
+-- 📊 YENİ: OTO STAT DAĞITIMI
+-- =============================================================================
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(2)
+        if _G.AutoStats and _G.SecilenStat ~= "" and _G.SecilenStat ~= "None Selected" and _G.SecilenStat ~= "Clear Selection" then
+            pcall(function()
+                -- Jenerik Stat Arttırma Mantığı (Ekranda bulunan '+' Butonuna tıklama simülasyonu)
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in ipairs(pg:GetDescendants()) do
+                        if v:IsA("TextButton") or v:IsA("ImageButton") then
+                            local parent = v.Parent
+                            if parent then
+                                local parentText = ""
+                                for _, child in ipairs(parent:GetDescendants()) do
+                                    if child:IsA("TextLabel") then
+                                        parentText = parentText .. string.lower(child.Text) .. " "
+                                    end
+                                end
+                                local statLower = string.lower(_G.SecilenStat)
+                                if string.find(parentText, statLower) and (v.Name == "+" or v.Text == "+" or string.find(string.lower(v.Name), "add")) then
+                                    if getconnections then
+                                        for _, conn in pairs(getconnections(v.MouseButton1Click)) do conn:Fire() end
+                                    end
+                                    local cx = v.AbsolutePosition.X + (v.AbsoluteSize.X / 2)
+                                    local cy = v.AbsolutePosition.Y + (v.AbsoluteSize.Y / 2) + 36
+                                    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                                    task.wait(0.05)
+                                    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                                end
+                            end
+                        end
+                    end
+                end
+                -- Alternatif Güvenlik Ağı: Popüler oyunların direkt remote'larını tetikle
+                for _, rem in ipairs(ReplicatedStorage:GetDescendants()) do
+                    if rem:IsA("RemoteEvent") then
+                        local rn = string.lower(rem.Name)
+                        if string.find(rn, "stat") or string.find(rn, "upgrade") then
+                            rem:FireServer("Add", _G.SecilenStat, 1)
+                            rem:FireServer(_G.SecilenStat, 1)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- =============================================================================
+-- 👁️ YENİ: SADELEŞTİRİLMİŞ ESP SİSTEMİ (WALLHACK)
+-- =============================================================================
+local ESPFolder = CoreGui:FindFirstChild("WansHubESPFolder") or Instance.new("Folder")
+ESPFolder.Name = "WansHubESPFolder"
+ESPFolder.Parent = CoreGui
+
+-- Fiziksel olarak yakında olan/yüklenen karakterler için ESP
+local function CreateESP(part, name, color)
+    if not part or not part.Parent then return end
+    local existing = ESPFolder:FindFirstChild(part.Parent.Name .. "_ESP")
+    if existing then return existing end
+
+    local billboard = Instance.new("BillboardGui", ESPFolder)
+    billboard.Name = part.Parent.Name .. "_ESP"
+    billboard.Adornee = part
+    billboard.Size = UDim2.new(0, 150, 0, 40)
+    billboard.AlwaysOnTop = true
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+
+    local label = Instance.new("TextLabel", billboard)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = color
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextStrokeTransparency = 0
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+
+    task.spawn(function()
+        while billboard.Parent and part and part.Parent do
+            local dist = math.floor((Camera.CFrame.Position - part.Position).Magnitude)
+            label.Text = name .. "\n[" .. dist .. "m]"
+            task.wait(0.5)
+        end
+        if billboard.Parent then billboard:Destroy() end
+    end)
+    return billboard
+end
+
+task.spawn(function()
+    while getgenv().SailorGoldLoaded do
+        task.wait(1)
+        ESPFolder:ClearAllChildren()
+
+        if _G.PlayerESP then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    CreateESP(p.Character.HumanoidRootPart, p.Name, Color3.fromRGB(0, 255, 255))
+                end
+            end
+        end
+
+        if _G.BossESP then
+            -- Sadece oyun tarafından fiziksel olarak yüklenenleri (yakında olanları) göster
+            local npcsFolder = workspace:FindFirstChild("NPCs") or workspace:FindFirstChild("Enemies") or workspace
+            for _, obj in ipairs(npcsFolder:GetDescendants()) do
+                if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 then
+                    local n = string.lower(obj.Name)
+                    local temizIsim = TemizIsim(obj.Name)
+                    if string.find(n, "boss") or table.find(_G.Bosslar, temizIsim) then
+                        CreateESP(obj.HumanoidRootPart, obj.Name, Color3.fromRGB(0, 255, 0)) -- Yeşile döndü
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- =============================================================================
+-- 🚀 YENİ: SERVER HOP (SUNUCU DEĞİŞTİR)
+-- =============================================================================
+local function ServerHop()
+    local Api = "https://games.roblox.com/v1/games/"
+    local _place = game.PlaceId
+    local _servers = Api..tostring(_place).."/servers/Public?sortOrder=Asc&limit=100"
+    local function ListServers(cursor)
+        local Raw = game:HttpGet(_servers .. ((cursor and "&cursor="..cursor) or ""))
+        return HttpService:JSONDecode(Raw)
+    end
+    local Server, Next; repeat
+        local Servers = ListServers(Next)
+        Server = Servers.data[math.random(1, #Servers.data)]
+        Next = Servers.nextPageCursor
+    until Server and Server.playing < Server.maxPlayers - 1
+    if Server then
+        game:GetService("TeleportService"):TeleportToPlaceInstance(_place, Server.id, LocalPlayer)
+    end
+end
+
+-- =============================================================================
+-- ⚙️ YENİ: PERFORMANS MODU (GECE MAVİSİ & YÜKLENİYOR ÇARKLARI)
+-- =============================================================================
+local perfConnection
+local function TogglePerformanceMode(state)
+    _G.WhiteScreen = state
+    if state then
+        if not targetGui:FindFirstChild("WansNightSky") then
+            local ws = Instance.new("ScreenGui", targetGui)
+            ws.Name = "WansNightSky"
+            ws.IgnoreGuiInset = true
+            
+            -- Arka planı gece mavisi yap
+            local bg = Instance.new("Frame", ws)
+            bg.Size = UDim2.new(1, 0, 1, 0)
+            bg.BackgroundColor3 = Color3.fromRGB(15, 20, 40)
+            bg.BorderSizePixel = 0
+            
+            -- Ay (Emoji ile hafif çözüm)
+            local moon = Instance.new("TextLabel", bg)
+            moon.Text = "🌙"
+            moon.TextSize = 120
+            moon.BackgroundTransparency = 1
+            moon.Position = UDim2.new(0.8, 0, 0.1, 0)
+            
+            -- Bulut
+            local cloud = Instance.new("TextLabel", bg)
+            cloud.Text = "☁️"
+            cloud.TextSize = 80
+            cloud.BackgroundTransparency = 1
+            cloud.Position = UDim2.new(0.72, 0, 0.15, 0)
+
+            -- Yıldızlar eklentisi
+            for i = 1, 25 do
+                local star = Instance.new("TextLabel", bg)
+                star.Text = "✨"
+                star.TextSize = math.random(10, 25)
+                star.BackgroundTransparency = 1
+                star.Position = UDim2.new(math.random(), 0, math.random(0, 60)/100, 0)
+            end
+
+            -- Yükleniyor / Farm Çarkı (Büyük)
+            local gearBig = Instance.new("TextLabel", bg)
+            gearBig.Text = "⚙️"
+            gearBig.TextSize = 80
+            gearBig.BackgroundTransparency = 1
+            gearBig.Position = UDim2.new(0.5, -45, 0.5, -60)
+
+            -- Yükleniyor / Farm Çarkı (Küçük)
+            local gearSmall = Instance.new("TextLabel", bg)
+            gearSmall.Text = "⚙️"
+            gearSmall.TextSize = 50
+            gearSmall.BackgroundTransparency = 1
+            gearSmall.Position = UDim2.new(0.5, 10, 0.5, -20)
+            
+            local txt = Instance.new("TextLabel", bg)
+            txt.Size = UDim2.new(1, 0, 0, 60)
+            txt.Position = UDim2.new(0, 0, 0.5, 30)
+            txt.Text = "WANS HUB - PERFORMANCE MODE\nScript is running and farming in the background..."
+            txt.TextSize = 22
+            txt.Font = Enum.Font.GothamBold
+            txt.TextColor3 = Color3.fromRGB(220, 220, 255)
+            txt.BackgroundTransparency = 1
+            
+            -- YENİ EKLENDİ: DEVASA ÇIKIŞ TUŞU (PERFORMANS MODUNU KAPATMAK İÇİN)
+            local closePerfBtn = Instance.new("TextButton", bg)
+            closePerfBtn.Size = UDim2.new(0, 280, 0, 50)
+            closePerfBtn.Position = UDim2.new(0.5, -140, 0.9, -60)
+            closePerfBtn.BackgroundColor3 = Color3.fromRGB(200, 30, 50)
+            closePerfBtn.Text = "Turn Off Performance Mode"
+            closePerfBtn.Font = Enum.Font.GothamBold
+            closePerfBtn.TextSize = 16
+            closePerfBtn.TextColor3 = Color3.new(1, 1, 1)
+            Instance.new("UICorner", closePerfBtn).CornerRadius = UDim.new(0, 8)
+            
+            local closeStroke = Instance.new("UIStroke", closePerfBtn)
+            closeStroke.Color = Color3.fromRGB(255, 100, 100)
+            closeStroke.Thickness = 2
+            
+            closePerfBtn.MouseButton1Click:Connect(function()
+                TogglePerformanceMode(false)
+                if _G.PerfToggleRehberi and _G.PerfToggleRehberi.Set then
+                    _G.PerfToggleRehberi.Set(false, false)
+                end
+            end)
+
+            -- Çarkları Döndür
+            perfConnection = RunService.RenderStepped:Connect(function(dt)
+                if gearBig.Parent and gearSmall.Parent then
+                    gearBig.Rotation = gearBig.Rotation + (dt * 100)
+                    gearSmall.Rotation = gearSmall.Rotation - (dt * 150)
+                end
+            end)
+
+            pcall(function() RunService:Set3dRenderingEnabled(false) end)
+            pcall(function()
+                workspace.Terrain.WaterWaveSize = 0
+                workspace.Terrain.WaterWaveSpeed = 0
+                workspace.Terrain.WaterReflectance = 0
+                workspace.Terrain.WaterTransparency = 0
+                game.Lighting.GlobalShadows = false
+            end)
+        end
+    else
+        if targetGui:FindFirstChild("WansNightSky") then targetGui.WansNightSky:Destroy() end
+        if perfConnection then
+            perfConnection:Disconnect()
+            perfConnection = nil
+        end
+        pcall(function() RunService:Set3dRenderingEnabled(true) end)
+        pcall(function() game.Lighting.GlobalShadows = true end)
+    end
+end
+
+-- =============================================================================
+-- 🔒 KEY SİSTEMİ ARAYÜZÜ
+-- =============================================================================
+local KeyLink = "https://revohubkey.wuaze.com/?pass=RevoSecretPass2026" 
+local LogoID = "rbxassetid://91347112827105" 
+local MasterKey = "WANS-MASTER-524675" 
+
+local function GetCorrectKey()
+    local TurkiyeZamani = os.time() + (3 * 3600)
+    local Gun = tonumber(os.date("!%d", TurkiyeZamani))
+    local Ay = tonumber(os.date("!%m", TurkiyeZamani))
+    local Yil = tonumber(os.date("!%Y", TurkiyeZamani))
+    local Saat = tonumber(os.date("!%H", TurkiyeZamani))
+    local Hesap = (Gun * Ay * Yil) + (Saat * 99) + 1453
+    return "WANS-" .. tostring(Hesap)
+end
+
+local function InitKeySystem(OnSuccess)
+    local Screen = Library:Init()
+    local Frame = Instance.new("Frame", Screen)
+    Frame.Size = UDim2.new(0, 450, 0, 280)
+    Frame.Position = UDim2.new(0.5, -225, 0.5, -140)
+    Frame.BackgroundColor3 = Theme.Background
+    Frame.BorderSizePixel = 0
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 15)
+    
+    local MainStroke = Instance.new("UIStroke", Frame)
+    MainStroke.Color = Theme.Accent
+    MainStroke.Thickness = 2
+    AddGoldGradient(MainStroke)
+    
+    Library:MakeDraggable(Frame)
+    
+    local Logo = Instance.new("ImageLabel", Frame)
+    Logo.Image = LogoID
+    Logo.Size = UDim2.new(0, 60, 0, 60)
+    Logo.Position = UDim2.new(0.5, -30, 0.05, 0)
+    Logo.BackgroundTransparency = 1
+    Logo.ImageColor3 = Theme.Accent
+    
+    local Title = Instance.new("TextLabel", Frame)
+    Title.Text = T("VIP Access")
+    Title.Position = UDim2.new(0, 0, 0.3, 0)
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextColor3 = Theme.Accent
+    Title.TextSize = 22
+    Title.BackgroundTransparency = 1
+    
+    local Box = Instance.new("TextBox", Frame)
+    Box.Size = UDim2.new(0.8, 0, 0, 45)
+    Box.Position = UDim2.new(0.1, 0, 0.45, 0)
+    Box.BackgroundColor3 = Theme.ElementBg
+    Box.PlaceholderText = T("Enter Premium Key")
+    Box.Text = ""
+    Box.TextColor3 = Theme.Accent
+    Box.Font = Enum.Font.Code
+    Box.TextSize = 14
+    Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 8)
+    Instance.new("UIStroke", Box).Color = Theme.Accent
+    Box.UIStroke.Thickness = 1
+    Box.UIStroke.Transparency = 0.5
+    
+    local EnterBtn = Instance.new("TextButton", Frame)
+    EnterBtn.Size = UDim2.new(0.38, 0, 0, 45)
+    EnterBtn.Position = UDim2.new(0.1, 0, 0.7, 0)
+    EnterBtn.BackgroundColor3 = Theme.Accent
+    EnterBtn.Text = T("Login")
+    EnterBtn.TextColor3 = Color3.new(0,0,0)
+    EnterBtn.Font = Enum.Font.GothamBold
+    EnterBtn.TextSize = 16 
+    Instance.new("UICorner", EnterBtn).CornerRadius = UDim.new(0, 8)
+    
+    local GetBtn = Instance.new("TextButton", Frame)
+    GetBtn.Size = UDim2.new(0.38, 0, 0, 45)
+    GetBtn.Position = UDim2.new(0.52, 0, 0.7, 0)
+    GetBtn.BackgroundColor3 = Theme.Sidebar
+    GetBtn.Text = T("Get Key")
+    GetBtn.TextColor3 = Theme.Text
+    GetBtn.Font = Enum.Font.GothamBold
+    GetBtn.TextSize = 16 
+    Instance.new("UICorner", GetBtn).CornerRadius = UDim.new(0, 8)
+    local GStroke = Instance.new("UIStroke", GetBtn)
+    GStroke.Color = Theme.Accent
+    GStroke.Thickness = 1
+    
+    GetBtn.MouseButton1Click:Connect(function() 
+        if setclipboard then setclipboard(KeyLink) end
+        GetBtn.Text = T("Link Copied!")
+        task.wait(2)
+        GetBtn.Text = T("Get Key") 
+    end)
+    
+    EnterBtn.MouseButton1Click:Connect(function()
+        local Input = Box.Text:gsub("%s+", "")
+        local Correct = GetCorrectKey()
+        local Correct2 = "REVO-" .. tostring((tonumber(os.date("!%d", os.time() + (3 * 3600))) * tonumber(os.date("!%m", os.time() + (3 * 3600))) * tonumber(os.date("!%Y", os.time() + (3 * 3600)))) + (tonumber(os.date("!%H", os.time() + (3 * 3600))) * 99) + 1453)
+        
+        Box.Text = T("Waiting...")
+        task.wait(0.5)
+        if Input == Correct or Input == Correct2 or Input == "WANS-DEV" or Input == MasterKey then 
+            Box.TextColor3 = Color3.fromRGB(60, 255, 60)
+            Box.Text = T("Welcome!")
+            task.wait(1)
+            Screen:Destroy()
+            OnSuccess() 
+        else 
+            Box.TextColor3 = Color3.fromRGB(255, 60, 60)
+            Box.Text = T("Invalid Key!")
+            task.wait(1.5)
+            Box.Text = Input
+            Box.TextColor3 = Theme.Accent 
+        end
+    end)
+end
+
+-- =============================================================================
+-- 🖥️ ARAYÜZ OLUŞTURMA
+-- =============================================================================
+local function StartMainUI()
+    local ScreenGui = Library:Init()
+    local Win = Library:CreateWindow(ScreenGui)
+
+    local FarmTab = Win:AddTab("⚔️ Auto Farm")
+    local TowerTab = Win:AddTab("🗼 Tower + Dungeon")
+    local IsinlanmaTab = Win:AddTab("🚀 Teleport")
+    local StatsTab = Win:AddTab("📊 Auto Stats")
+    local ESPTab = Win:AddTab("👁️ ESP")
+    local OyuncuTab = Win:AddTab("🏃 Player")
+    local AyarlarTab = Win:AddTab("⚙️ Settings")
+
+    local SilahDrop = FarmTab:AddDropdown("⚔️ Select Weapon", function() 
+        local list = {"Clear Selection"}
+        for _, v in ipairs(SilahlariGetir()) do table.insert(list, v) end
+        return list
+    end, "None Selected", function(opt) 
+        if opt == "Clear Selection" then _G.SecilenSilah = "" else _G.SecilenSilah = opt end
+    end)
+    _G.SilahDropdownRehberi = SilahDrop 
+
+    local NormalDrop = FarmTab:AddDropdown("👹 Select Normal Monster", function() 
+        local list = {"Clear Selection"}
+        for _, v in ipairs(_G.Canavarlar) do table.insert(list, v) end
+        return list
+    end, "None Selected", function(opt) 
+        if opt == "Clear Selection" or opt == "None Selected" then 
+            _G.AktifHedef = "" 
+        else 
+            _G.AktifHedef = opt 
+            if _G.BossDropdownRehberi and _G.BossDropdownRehberi.SetText then
+                _G.BossDropdownRehberi.SetText("None Selected")
+            end
+        end
+        if _G.OtoGorev or _G.OtoLevel then GoreviIptalEt() end
+        _G.MevcutGorevHedefi = "" 
+    end)
+    _G.NormalDropdownRehberi = NormalDrop 
+
+    local BossDrop = FarmTab:AddDropdown("👑 Select Boss", function() 
+        local list = {"Clear Selection"}
+        for _, v in ipairs(_G.Bosslar) do table.insert(list, v) end
+        return list
+    end, "None Selected", function(opt) 
+        if opt == "Clear Selection" or opt == "None Selected" then 
+            _G.AktifHedef = "" 
+        else 
+            _G.AktifHedef = opt 
+            if _G.NormalDropdownRehberi and _G.NormalDropdownRehberi.SetText then
+                _G.NormalDropdownRehberi.SetText("None Selected")
+            end
+        end
+        if _G.OtoGorev or _G.OtoLevel then GoreviIptalEt() end
+        _G.MevcutGorevHedefi = "" 
+    end)
+    _G.BossDropdownRehberi = BossDrop 
+
+    local FarmToggle, QuestToggle, OtoLevelToggle, TowerToggle, OtoVurusToggle, OtoBossToggle
+
+    FarmToggle = FarmTab:AddToggle("▶️ Start Auto Farm", false, function(v) 
+        _G.AutoFarm = v 
+        if v and OtoLevelToggle then OtoLevelToggle.Set(false, false); _G.OtoLevel = false end
+        if v and TowerToggle then TowerToggle.Set(false, false); _G.TowerFarm = false end
+        if v and OtoBossToggle then OtoBossToggle.Set(false, false); _G.OtoTumBosslar = false end
+        GoreviIptalEt()
+        _G.MevcutGorevHedefi = ""
+    end)
+
+    FarmTab:AddToggle("Auto Use Skills (Z, X, C, V, F)", false, function(v) _G.AutoSkills = v end)
+
+    local SkillFrameVisible = false
+    local SkillDelaySlider, zTog, xTog, cTog, vTog, fTog
+
+    FarmTab:AddButton("🛠️ Toggle Skill Settings", function()
+        SkillFrameVisible = not SkillFrameVisible
+        if zTog then zTog.Frame.Visible = SkillFrameVisible end
+        if xTog then xTog.Frame.Visible = SkillFrameVisible end
+        if cTog then cTog.Frame.Visible = SkillFrameVisible end
+        if vTog then vTog.Frame.Visible = SkillFrameVisible end
+        if fTog then fTog.Frame.Visible = SkillFrameVisible end
+        if SkillDelaySlider then SkillDelaySlider.Frame.Visible = SkillFrameVisible end
+    end)
+
+    SkillDelaySlider = FarmTab:AddSlider("Skill Delay (Wait Time)", 0.1, 5, 2.5, function(v) _G.SkillDelay = v end)
+    zTog = FarmTab:AddToggle("Use Skill Z", true, function(v) _G.UseSkillZ = v end)
+    xTog = FarmTab:AddToggle("Use Skill X", true, function(v) _G.UseSkillX = v end)
+    cTog = FarmTab:AddToggle("Use Skill C", true, function(v) _G.UseSkillC = v end)
+    vTog = FarmTab:AddToggle("Use Skill V", true, function(v) _G.UseSkillV = v end)
+    fTog = FarmTab:AddToggle("Use Skill F", true, function(v) _G.UseSkillF = v end)
+
+    if SkillDelaySlider then SkillDelaySlider.Frame.Visible = false end
+    if zTog then zTog.Frame.Visible = false end
+    if xTog then xTog.Frame.Visible = false end
+    if cTog then cTog.Frame.Visible = false end
+    if vTog then vTog.Frame.Visible = false end
+    if fTog then fTog.Frame.Visible = false end
+
+    QuestToggle = FarmTab:AddToggle("📜 Smart Auto Quest", false, function(v) 
+        _G.OtoGorev = v 
+        GoreviIptalEt()
+        _G.MevcutGorevHedefi = ""
+    end)
+
+    OtoLevelToggle = FarmTab:AddToggle("🌟 Auto Level (Full Auto)", false, function(v) 
+        _G.OtoLevel = v 
+        if v then
+            if FarmToggle then FarmToggle.Set(false, false); _G.AutoFarm = false end
+            if QuestToggle then QuestToggle.Set(false, false); _G.OtoGorev = false end
+            if OtoVurusToggle then OtoVurusToggle.Set(false, false); _G.OtoVurus = false end
+            if TowerToggle then TowerToggle.Set(false, false); _G.TowerFarm = false end
+            if OtoBossToggle then OtoBossToggle.Set(false, false); _G.OtoTumBosslar = false end
+            
+            if _G.NormalDropdownRehberi and _G.NormalDropdownRehberi.SetText then _G.NormalDropdownRehberi.SetText("None Selected") end
+            if _G.BossDropdownRehberi and _G.BossDropdownRehberi.SetText then _G.BossDropdownRehberi.SetText("None Selected") end
+            _G.AktifHedef = ""
+        else
+            GoreviIptalEt()
+            _G.MevcutGorevHedefi = ""
+            _G.AktifHedef = ""
+            if _G.NormalDropdownRehberi and _G.NormalDropdownRehberi.SetText then
+                _G.NormalDropdownRehberi.SetText("None Selected")
+            end
+            if _G.BossDropdownRehberi and _G.BossDropdownRehberi.SetText then
+                _G.BossDropdownRehberi.SetText("None Selected")
+            end
+        end
+    end)
+
+    OtoBossToggle = FarmTab:AddToggle("🔄 Auto Boss Rotation", false, function(v)
+        _G.OtoTumBosslar = v
+        if v then
+            _G.MevcutBossIndex = 1
+            if FarmToggle then FarmToggle.Set(false, false); _G.AutoFarm = false end
+            if OtoLevelToggle then OtoLevelToggle.Set(false, false); _G.OtoLevel = false end
+            if TowerToggle then TowerToggle.Set(false, false); _G.TowerFarm = false end
+            GoreviIptalEt()
+        else
+            _G.AutoFarm = false
+            _G.AktifHedef = ""
+        end
+    end)
+
+    FarmTab:AddButton("❌ Manually Cancel Quest", function() GoreviIptalEt() end)
+
+    OtoVurusToggle = FarmTab:AddToggle("Auto Attack Only", false, function(v) 
+        _G.OtoVurus = v 
+        if v and OtoLevelToggle then OtoLevelToggle.Set(false, false); _G.OtoLevel = false end
+        if v and TowerToggle then TowerToggle.Set(false, false); _G.TowerFarm = false end
+    end)
+
+    local VurusOptions = function() return {"Top", "Bottom", "Behind"} end
+    _G.VurusDropdownRehberi = FarmTab:AddDropdown("📍 Hit Position?", VurusOptions, "Top", function(opt) 
+        _G.VurusYonu = opt 
+    end)
+
+    FarmTab:AddSlider("Attack Speed (Sec)", 0.05, 1, 0.2, function(v) _G.SaldiriHizi = v end)
+    FarmTab:AddSlider("Flight Speed", 50, 350, 100, function(v) _G.UcusHizi = v end)
+    FarmTab:AddSlider("Distance to Monster", 0, 30, 12, function(v) _G.Mesafe = v end)
+
+    TowerTab:AddButton("🚀 Teleport to Tower / Dungeon", function()
+        _G.TeleportingTo = _G.Adalar["17. Tower Island"] or Vector3.new(1281.1, -4.3, -1473.4)
+    end)
+
+    TowerToggle = TowerTab:AddToggle("🗼 Tower + Dungeon Auto Farm", false, function(v)
+        _G.TowerFarm = v
+        if v then
+            if FarmToggle then FarmToggle.Set(false, false); _G.AutoFarm = false end
+            if OtoLevelToggle then OtoLevelToggle.Set(false, false); _G.OtoLevel = false end
+            if QuestToggle then QuestToggle.Set(false, false); _G.OtoGorev = false end
+            if OtoVurusToggle then OtoVurusToggle.Set(false, false); _G.OtoVurus = false end
+            if OtoBossToggle then OtoBossToggle.Set(false, false); _G.OtoTumBosslar = false end
+            
+            if _G.SecilenSilah == "" or _G.SecilenSilah == "None Selected" or _G.SecilenSilah == "Clear Selection" then
+                local silahlar = SilahlariGetir()
+                if silahlar and #silahlar > 0 and silahlar[1] ~= "Weapon Not Found" then
+                    if _G.SilahDropdownRehberi and _G.SilahDropdownRehberi.Set then
+                        _G.SilahDropdownRehberi.Set(silahlar[1])
+                    else
+                        _G.SecilenSilah = silahlar[1]
+                    end
+                end
+            end
+            GoreviIptalEt()
+            _G.MevcutGorevHedefi = ""
+            _G.AktifHedef = ""
+        end
+    end)
+
+    local SecilenAda = ""
+    local AdaOptions = function() 
+        local list = {"Clear Selection"}
+        for adaAdi, _ in pairs(_G.Adalar) do table.insert(list, adaAdi) end
+        table.sort(list) 
+        return list
+    end
+    _G.AdaDropdownRehberi = IsinlanmaTab:AddDropdown("🏝️ Select Island (Map)", AdaOptions, "None Selected", function(opt) 
+        if opt == "Clear Selection" then SecilenAda = "" else SecilenAda = opt end
+    end)
+
+    IsinlanmaTab:AddButton("🚀 Teleport to Selected Island", function()
+        if SecilenAda ~= "" and SecilenAda ~= "None Selected" and SecilenAda ~= "Clear Selection" and _G.Adalar[SecilenAda] then
+            _G.TeleportingTo = _G.Adalar[SecilenAda]
+        end
+    end)
+
+    local NpcOptions = function() 
+        local list = {"Clear Selection"}
+        for _, v in ipairs(_G.Npcler) do table.insert(list, v) end
+        return list
+    end
+    _G.NpcDropdownRehberi = IsinlanmaTab:AddDropdown("👤 Select NPC & Vendor", NpcOptions, "None Selected", function(opt) 
+        if opt == "Clear Selection" then _G.SecilenNPC = "" else _G.SecilenNPC = opt end
+    end)
+
+    IsinlanmaTab:AddButton("🚀 Teleport to Selected NPC", function()
+        if _G.SecilenNPC and _G.SecilenNPC ~= "None Selected" and _G.SecilenNPC ~= "Clear Selection" then
+            local coord = GetKoordinat(_G.SecilenNPC)
+            if coord then _G.TeleportingTo = coord end
+        end
+    end)
+
+    IsinlanmaTab:AddButton("🛑 Stop Teleporting", function() _G.TeleportingTo = nil; _G.HaritaTaraniyor = false end)
+
+    local StatSecenekleri = {"Melee", "Defense", "Sword", "Power"}
+    StatsTab:AddDropdown("Select Stat to Upgrade", StatSecenekleri, "None Selected", function(opt)
+        if opt == "Clear Selection" then _G.SecilenStat = "" else _G.SecilenStat = opt end
+    end)
+
+    StatsTab:AddToggle("Enable Auto Stats", false, function(v) _G.AutoStats = v end)
+
+    ESPTab:AddToggle("Player ESP", false, function(v) _G.PlayerESP = v end)
+    ESPTab:AddToggle("Boss ESP", false, function(v) _G.BossESP = v end)
+
+    OyuncuTab:AddSlider("Walk Speed", 16, 300, 16, function(v) 
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.WalkSpeed = v end 
+    end)
+
+    OyuncuTab:AddSlider("Jump Power", 50, 300, 50, function(v) 
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.JumpPower = v end 
+    end)
+
+    AyarlarTab:AddDropdown("Language / Dil", {"English", "Türkçe"}, _G.Language, function(opt)
+        _G.Language = opt
+        for _, update in ipairs(UIUpdaters) do pcall(update) end
+        
+        if _G.SilahDropdownRehberi then _G.SilahDropdownRehberi.Refresh() end
+        if _G.NormalDropdownRehberi then _G.NormalDropdownRehberi.Refresh() end
+        if _G.BossDropdownRehberi then _G.BossDropdownRehberi.Refresh() end
+        if _G.VurusDropdownRehberi then _G.VurusDropdownRehberi.Refresh() end
+        if _G.AdaDropdownRehberi then _G.AdaDropdownRehberi.Refresh() end
+        if _G.NpcDropdownRehberi then _G.NpcDropdownRehberi.Refresh() end
+        if _G.KeybindDropdownRehberi then _G.KeybindDropdownRehberi.Refresh() end
+    end)
+
+    local keybindOptions = {"RightControl", "LeftControl", "RightAlt", "LeftAlt", "F4", "F8", "K", "Z", "X", "P"}
+    _G.KeybindDropdownRehberi = AyarlarTab:AddDropdown("UI Toggle Key", keybindOptions, "RightControl", function(opt)
+        pcall(function() _G.ToggleKey = Enum.KeyCode[opt] end)
+    end)
+
+    AyarlarTab:AddButton("Join Discord Server", function()
+        pcall(function()
+            if setclipboard then setclipboard("https://discord.gg/UCNjTcuXXv") end
+            game.StarterGui:SetCore("SendNotification", {
+                Title = "WANS HUB",
+                Text = "Discord link copied! / Link kopyalandı!",
+                Duration = 5;
+            })
+        end)
+    end)
+
+    AyarlarTab:AddButton("📍 Copy Current Coordinates", function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local pos = char.HumanoidRootPart.Position
+            local str = string.format("Vector3.new(%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z)
+            if setclipboard then setclipboard(str) end
+        end
+    end)
+
+    AyarlarTab:AddButton("🌍 Auto Discover All Islands (Scan)", function()
+        if _G.HaritaTaraniyor then return end
+        _G.HaritaTaraniyor = true
+        task.spawn(function()
+            local siraliAdalar = {}
+            for isim, pos in pairs(_G.Adalar) do table.insert(siraliAdalar, {Adi = isim, Koor = pos}) end
+            table.sort(siraliAdalar, function(a, b) return a.Adi < b.Adi end)
+
+            for i, ada in ipairs(siraliAdalar) do
+                if not _G.HaritaTaraniyor then break end
+                
+                pcall(function()
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "🌍 Island Scan",
+                        Text = "Scanning " .. i .. "/" .. #siraliAdalar .. ":\n" .. ada.Adi,
+                        Duration = 4;
+                    })
+                end)
+                
+                _G.TeleportingTo = ada.Koor
+                
+                local char = LocalPlayer.Character
+                while _G.HaritaTaraniyor and char and char:FindFirstChild("HumanoidRootPart") do
+                    local dist = (char.HumanoidRootPart.Position - ada.Koor).Magnitude
+                    if dist < 60 then break end
+                    task.wait(0.5)
+                end
+                
+                if _G.HaritaTaraniyor then
+                    task.wait(4)
+                end
+            end
+
+            if _G.HaritaTaraniyor then
+                _G.HaritaTaraniyor = false
+                _G.TeleportingTo = nil
+                pcall(function()
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "✅ Done",
+                        Text = "Map scan complete! All available NPCs saved.",
+                        Duration = 5;
+                    })
+                end)
+            end
+        end)
+    end)
+
+    AyarlarTab:AddButton("🚀 Server Hop", function()
+        pcall(function()
+            game.StarterGui:SetCore("SendNotification", {Title="Server Hop", Text="Finding new server...", Duration=5})
+            ServerHop()
+        end)
+    end)
+
+    _G.PerfToggleRehberi = AyarlarTab:AddToggle("Performance Mode (White Screen)", false, function(v) TogglePerformanceMode(v) end)
+
+    AyarlarTab:AddButton("🛑 Stop Island Scan", function()
+        _G.HaritaTaraniyor = false
+        _G.TeleportingTo = nil
+        pcall(function()
+            game.StarterGui:SetCore("SendNotification", {Title="Stopped", Text="Island scan cancelled.", Duration=3})
+        end)
+    end)
+
+    AyarlarTab:AddButton("🔄 Rescan Map (For New Islands)", function()
+        AdalariOtomatikBul()
+        if _G.AdaDropdownRehberi then _G.AdaDropdownRehberi.Refresh() end
+    end)
+
+    AyarlarTab:AddButton("Clear Cache (If Broken)", function()
+        if writefile then writefile(CacheFileName, "") end
+        _G.Canavarlar = {}
+        _G.Bosslar = {}
+        _G.Npcler = {}
+        _G.Koordinatlar = {}
+        canavarSet = {}
+        bossSet = {}
+        npcSet = {}
+        ListeleriGuncelle()
+        if _G.NormalDropdownRehberi then _G.NormalDropdownRehberi.Refresh() end
+        if _G.BossDropdownRehberi then _G.BossDropdownRehberi.Refresh() end
+        if _G.NpcDropdownRehberi then _G.NpcDropdownRehberi.Refresh() end
+    end)
+
+    getgenv().WansHubCloseUI = function() 
+        _G.AutoFarm = false 
+        _G.OtoVurus = false 
+        _G.TeleportingTo = nil
+        _G.OtoTumBosslar = false
+        _G.HaritaTaraniyor = false
+        _G.AutoSkills = false
+        _G.AutoStats = false
+        _G.PlayerESP = false
+        _G.BossESP = false
+        TogglePerformanceMode(false) 
+        
+        getgenv().SailorGoldLoaded = false 
+        local platform = workspace:FindFirstChild("WansAntiKickPlatform")
+        if platform then platform:Destroy() end
+        if CoreGui:FindFirstChild("WansHubESPFolder") then CoreGui.WansHubESPFolder:Destroy() end
+        if targetGui:FindFirstChild("WansHubGui") then targetGui.WansHubGui:Destroy() end
+        if ScreenGui then ScreenGui:Destroy() end 
+    end
+
+    AyarlarTab:AddButton("Close UI Completely (Destroy)", function() 
+        if getgenv().WansHubCloseUI then getgenv().WansHubCloseUI() end
+    end)
+
+    task.spawn(function()
+        while getgenv().SailorGoldLoaded and task.wait(1) do
+            local yeniNpcBulunduMu = ListeleriGuncelle()
+            local yeniSilahBulunduMu = SilahlariGuncelle()
+            pcall(function()
+                if yeniNpcBulunduMu then
+                    if _G.NormalDropdownRehberi then _G.NormalDropdownRehberi.Refresh() end
+                    if _G.BossDropdownRehberi then _G.BossDropdownRehberi.Refresh() end
+                    if _G.NpcDropdownRehberi then _G.NpcDropdownRehberi.Refresh() end
+                end
+                if yeniSilahBulunduMu then if _G.SilahDropdownRehberi then _G.SilahDropdownRehberi.Refresh() end end
+            end)
+        end
+    end)
+end
+
+-- =============================================================================
+-- ▶️ BAŞLAT
+-- =============================================================================
+InitKeySystem(StartMainUI)
